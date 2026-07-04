@@ -1,0 +1,846 @@
+/* HyperType design system. Pure-black instrument panel: OLED-black window,
+   flat hairline-separated sections (no cards), one systemBlue accent.
+   See DESIGN.md. */
+
+:root {
+  --bg: #000000;
+  --raise: #161616;
+  --field: #131313;
+  --line: #1f1f1f;
+  --line-2: #2e2e2e;
+  --sep: #1a1a1a;
+  --control: #262626;
+  --control-line: #3a3a3a;
+  --ink: #f2f2f2;
+  --ink-2: #a3a3a3;
+  --ink-3: #7a7a7a;
+  /* Brand purple from HyperType_Logo_Assets (brand-purple #7c2dff for
+     fills, electric-violet #a043ff for text/outlines on black, which
+     needs the lighter step to hit 4.5:1). */
+  --accent: #7c2dff;
+  --accent-hover: #8d47ff;
+  --accent-down: #6d1ef0;
+  --accent-ink: #a043ff;
+  --ring: rgba(124, 45, 255, 0.35);
+  --ring-soft: rgba(124, 45, 255, 0.2);
+  --danger: #ff453a;
+  --danger-tint: rgba(255, 69, 58, 0.12);
+
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --spring: cubic-bezier(0.32, 1.25, 0.32, 1);
+  --fast: 130ms;
+  --smooth: 180ms;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 13px/1.5 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+::selection {
+  background: var(--ring);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+}
+
+/* ---- Titlebar (frameless window) ---- */
+
+.titlebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding-left: 16px;
+  user-select: none;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  pointer-events: none;
+}
+.mark {
+  display: block;
+  transition: filter var(--smooth) var(--ease-out), opacity var(--smooth) var(--ease-out);
+}
+.mark.paused {
+  filter: grayscale(1) brightness(0.6);
+  opacity: 0.7;
+}
+.name {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.win-controls {
+  display: flex;
+  align-self: stretch;
+}
+.winbtn {
+  width: 46px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  font-size: 10px;
+  cursor: default;
+  transition: background var(--fast) var(--ease-out), color var(--fast) var(--ease-out);
+}
+.winbtn:hover {
+  background: var(--raise);
+  color: var(--ink);
+}
+.winbtn.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+.winbtn:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---- Flat sections: no boxes, hairlines and spacing only ---- */
+
+.content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 2px 22px 13px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-block: 12px;
+}
+.group + .group {
+  border-top: 1px solid var(--sep);
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.group-head h2 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Setting rows ---- */
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+.setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.setting-title {
+  font-weight: 600;
+}
+/* Subtitles wrap rather than truncate: every word of a setting's
+   explanation must be readable. */
+.setting-sub {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.setting-sub.on {
+  color: var(--accent-ink);
+}
+
+/* ---- Switch (iOS-style pill) ---- */
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--control-line);
+  background: var(--control);
+  cursor: pointer;
+  transition: background var(--smooth) var(--ease-out), border-color var(--smooth) var(--ease-out);
+}
+.switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fdfdfd;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  transition: transform var(--smooth) var(--spring), width var(--fast) var(--ease-out);
+}
+.switch:hover {
+  border-color: var(--ink-3);
+}
+/* iOS press feel: the knob stretches while held, then springs to its side. */
+.switch:active .knob {
+  width: 22px;
+}
+.switch[aria-checked="true"]:active .knob {
+  transform: translateX(12px);
+}
+.switch[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch[aria-checked="true"]:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.switch[aria-checked="true"] .knob {
+  transform: translateX(16px);
+}
+
+/* ---- Slider ---- */
+
+.slider {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 160px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--control);
+  outline: none;
+  cursor: pointer;
+}
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fdfdfd;
+  border: 0;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  transition: transform var(--fast) var(--ease-out);
+}
+.slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+.slider:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+.slider:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 3px;
+}
+
+/* ---- Composer ---- */
+
+.composer-card {
+  gap: 8px;
+}
+/* Narrow phone-portrait window: the composer stacks vertically. */
+.composer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* Segmented control with a sliding thumb */
+.seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 32px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--field);
+  border: 1px solid var(--line);
+}
+.seg-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  height: calc(100% - 4px);
+  border-radius: 5px;
+  background: var(--line-2);
+  transition: transform var(--smooth) var(--spring);
+}
+.seg[data-mode="shortcut"] .seg-thumb,
+.seg[data-mode="type"] .seg-thumb {
+  transform: translateX(100%);
+}
+.seg-mini {
+  height: 26px;
+  width: 128px;
+  flex: none;
+}
+.seg-mini button {
+  font-size: 11px;
+}
+/* Three-way segment: the thumb is a third wide and slides by cell index. */
+.seg-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+  width: 150px;
+}
+.seg-3 .seg-thumb {
+  width: calc(33.333% - 2px);
+  transform: translateX(0);
+}
+.seg-3[data-pos="1"] .seg-thumb {
+  transform: translateX(100%);
+}
+.seg-3[data-pos="2"] .seg-thumb {
+  transform: translateX(200%);
+}
+.seg-combo {
+  width: 196px;
+}
+.seg-combo button {
+  font-size: 10.5px;
+}
+
+/* Inline-editable numeric value in a setting subtitle: focusing selects the
+   whole number (select-all-and-retype), Enter/blur commits, Esc reverts. */
+.value-edit {
+  width: 4ch;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed var(--line-2);
+  border-radius: 0;
+  color: var(--ink);
+  font: 600 12px/1.4 var(--font-mono);
+  text-align: right;
+  outline: none;
+  user-select: text;
+  transition: border-color var(--fast) var(--ease-out);
+}
+.value-edit-wide {
+  width: 4.5ch;
+}
+.value-edit:hover {
+  border-bottom-color: var(--ink-3);
+}
+.value-edit:focus,
+.value-edit:focus-visible {
+  outline: none;
+  border-bottom: 1px solid var(--accent);
+}
+.seg button {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  border-radius: 5px;
+  transition: color var(--fast) var(--ease-out);
+}
+.seg button:hover {
+  color: var(--ink);
+}
+.seg button.active {
+  color: #fff;
+}
+.seg button:focus-visible {
+  outline-offset: -2px;
+}
+
+.field {
+  height: 32px;
+  padding: 0 10px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--fast) var(--ease-out), box-shadow var(--fast) var(--ease-out);
+}
+.field::placeholder {
+  color: var(--ink-2);
+}
+.field:hover {
+  border-color: var(--line-2);
+}
+.field:focus,
+.field:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring-soft);
+}
+
+.trigger-field {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.composer-arrow {
+  display: none;
+}
+
+.recorder {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  text-align: left;
+}
+.recorder-hint {
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+}
+.recorder.listening {
+  border-color: var(--accent);
+  animation: listening 1.2s ease-in-out infinite;
+}
+.recorder.listening .recorder-hint {
+  color: var(--accent-ink);
+}
+@keyframes listening {
+  50% {
+    box-shadow: 0 0 0 4px var(--ring-soft);
+  }
+}
+
+.add {
+  height: 32px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: none;
+  transition: background var(--fast) var(--ease-out), opacity var(--fast) var(--ease-out),
+    transform var(--fast) var(--ease-out);
+}
+.add:hover:enabled {
+  background: var(--accent-hover);
+}
+.add:active:enabled {
+  background: var(--accent-down);
+  transform: scale(0.98);
+}
+.add:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.form-error {
+  color: var(--danger);
+  font-size: 12px;
+  padding-inline: 2px;
+}
+
+/* ---- Snippet list ---- */
+
+.library {
+  flex: 1;
+  min-height: 0;
+}
+.library .card {
+  height: 100%;
+  min-height: 0;
+}
+.count {
+  font: 600 10.5px/1 var(--font-mono);
+  color: var(--ink-3);
+  background: var(--raise);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.library-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.library-actions button {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out),
+    background var(--fast) var(--ease-out);
+}
+.library-actions button:hover:enabled,
+.library-actions button:focus-visible {
+  color: var(--ink);
+  border-color: var(--line-2);
+  background: var(--raise);
+}
+.library-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.transfer-message {
+  min-height: 16px;
+  margin-top: -2px;
+  color: var(--ink-2);
+  font-size: 11.5px;
+}
+
+.list {
+  list-style: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  transition: background var(--fast) var(--ease-out);
+}
+.row + .row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  background: var(--sep);
+}
+.row:hover,
+.row:focus-within {
+  background: var(--raise);
+}
+.row.fresh {
+  animation: row-in var(--smooth) var(--ease-out);
+}
+
+/* ---- Drag to reorder ---- */
+
+.grip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 24px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease-out);
+}
+.grip svg {
+  fill: var(--ink-3);
+  transition: fill var(--fast) var(--ease-out);
+}
+.grip:hover svg,
+.grip:focus-visible svg {
+  fill: var(--ink);
+}
+.row:hover .grip,
+.row:focus-within .grip,
+.grip:focus-visible {
+  opacity: 1;
+}
+.grip:active {
+  cursor: grabbing;
+}
+/* While a drag is live: bystander rows glide out of the way, the dragged
+   row follows the pointer raw (no transition) and reads as lifted. */
+.list.reordering {
+  touch-action: none;
+}
+.list.reordering .row {
+  transition: transform var(--smooth) var(--ease-out);
+}
+.list.reordering .row.dragging {
+  transition: none;
+  z-index: 1;
+  background: var(--raise);
+}
+.list.reordering .row.dragging .grip {
+  opacity: 1;
+  cursor: grabbing;
+}
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.keycap {
+  font: 600 11.5px/1 var(--font-mono);
+  color: var(--ink);
+  background: var(--raise);
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 4px 7px;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chord .keycap {
+  color: var(--accent-ink);
+}
+.chord {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+.row .keycap,
+.row .chord {
+  flex: none;
+}
+
+.arrow {
+  color: var(--ink-3);
+  flex: none;
+}
+
+.expansion {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+.row:hover .expansion,
+.row:focus-within .expansion {
+  color: var(--ink);
+}
+
+.iconbtn {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease-out), color var(--fast) var(--ease-out),
+    background var(--fast) var(--ease-out);
+}
+.row:hover .iconbtn,
+.row:focus-within .iconbtn,
+.iconbtn:focus-visible {
+  opacity: 1;
+}
+.iconbtn:hover,
+.iconbtn:focus-visible {
+  color: var(--ink);
+  background: var(--control);
+}
+.iconbtn.del:hover,
+.iconbtn.del:focus-visible {
+  color: var(--danger);
+  background: var(--danger-tint);
+}
+.iconbtn.save {
+  color: var(--accent-ink);
+}
+.iconbtn.save:disabled {
+  opacity: 0.35;
+  color: var(--ink-3);
+  cursor: default;
+  background: transparent;
+}
+
+.row-edit {
+  align-items: stretch;
+}
+.row-edit .iconbtn {
+  opacity: 1;
+}
+.row-edit-form {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+.row-edit-main {
+  flex: 1;
+  min-width: 0;
+}
+.row-edit-top {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 8px;
+}
+.row-kind {
+  width: 112px;
+}
+.row-kind button {
+  font-size: 10.5px;
+}
+.row-trigger,
+.row-expansion {
+  width: 100%;
+  min-width: 0;
+}
+.row-expansion {
+  margin-top: 6px;
+}
+.row-actions {
+  display: flex;
+  gap: 3px;
+  padding-top: 4px;
+}
+.row-error {
+  padding-top: 5px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 44px 16px;
+  text-align: center;
+}
+.empty-title {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.empty-demo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  opacity: 0.75;
+}
+.empty-line {
+  color: var(--ink-2);
+  font-size: 12px;
+  max-width: 40ch;
+}
+
+/* ---- Scrollbar: none, phone-style. The list still wheel-scrolls. ---- */
+
+.list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* ---- Footer ---- */
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-2);
+  font-size: 11px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sep);
+}
+.hint {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+.ver {
+  font-family: var(--font-mono);
+  flex: none;
+}
+.quit {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: color var(--fast) var(--ease-out), background var(--fast) var(--ease-out);
+}
+.quit:hover,
+.quit:focus-visible {
+  color: var(--danger);
+  background: var(--danger-tint);
+}
+
+/* ---- Reduced motion ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

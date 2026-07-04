@@ -1,0 +1,4 @@
+# Tauri on Windows requires the MSVC toolchain (WebView2 + windows crate).
+# This pins the project even though the machine's global default is GNU.
+[toolchain]
+channel = "stable-x86_64-pc-windows-msvc"

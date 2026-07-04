@@ -1,0 +1,25 @@
+{
+  "name": "hypertype",
+  "private": true,
+  "version": "1.0.5",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "dist": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-autostart": "^2",
+    "solid-js": "^1.9.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "typescript": "^5.6.2",
+    "vite": "^6.0.0",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}
