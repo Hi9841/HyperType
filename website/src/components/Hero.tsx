@@ -12,13 +12,13 @@ export function Hero({ onBuy }: HeroProps) {
         <div className="grid-dots absolute inset-0 opacity-80" />
       </div>
 
-      <div className="page-shell relative grid items-center gap-12 section-pad lg:grid-cols-[1.15fr_0.85fr] lg:gap-16">
+      <div className="page-shell relative grid items-center gap-12 section-pad lg:grid-cols-[1.12fr_0.88fr] lg:gap-14">
         <div>
           <p className="label-soft anim-rise">
             Instant text expansion for Windows
           </p>
 
-          <h1 className="display anim-rise anim-delay-1 mt-4 text-[clamp(2.5rem,5.5vw,3.9rem)] text-ink">
+          <h1 className="display anim-rise anim-delay-1 mt-4 text-[clamp(2.4rem,5.2vw,3.75rem)] text-ink">
             Type less.
             <br />
             <span className="text-accent-ink">Everywhere.</span>
@@ -31,7 +31,11 @@ export function Hero({ onBuy }: HeroProps) {
           </p>
 
           <div className="anim-rise anim-delay-3 mt-8 flex flex-wrap items-center gap-3">
-            <button type="button" onClick={onBuy} className="btn btn-primary btn-lg">
+            <button
+              type="button"
+              onClick={onBuy}
+              className="btn btn-primary btn-lg"
+            >
               Get HyperType — $19
             </button>
             <a href="#how" className="btn btn-secondary btn-lg">
@@ -39,7 +43,7 @@ export function Hero({ onBuy }: HeroProps) {
             </a>
           </div>
 
-          <ul className="anim-rise anim-delay-3 mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-ink-3">
+          <ul className="anim-rise anim-delay-3 mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-ink-2">
             <li className="flex items-center gap-2">
               <Dot /> One-time purchase
             </li>
@@ -47,7 +51,7 @@ export function Hero({ onBuy }: HeroProps) {
               <Dot /> Works in every app
             </li>
             <li className="flex items-center gap-2">
-              <Dot /> ~16 MB RAM
+              <Dot /> Lives in the tray
             </li>
           </ul>
         </div>

@@ -8,6 +8,10 @@ const features = [
     body: "Simple triggers like gm, or full key chords. Build a library that matches how you actually work.",
   },
   {
+    title: "Insert method you control",
+    body: "Auto, Paste, or Type. Tune paste shortcuts and clipboard restore so expansion behaves the way each app expects.",
+  },
+  {
     title: "Tray-first, always ready",
     body: "It lives in the system tray. Open the manager for fifteen seconds, add a snippet, close it. Back to your work.",
   },
@@ -16,12 +20,8 @@ const features = [
     body: "Built for speed: ~0% idle CPU, ~16 MB RAM, a few megabytes on disk. No Electron bloat. No waiting spinners.",
   },
   {
-    title: "Launch at login",
-    body: "Turn it on once. HyperType starts with Windows and is ready the moment you sit down.",
-  },
-  {
     title: "Your snippets stay yours",
-    body: "Snippets live on your machine. No subscription trap for your own phrases. Buy once, expand forever.",
+    body: "Snippets live on your machine. Export and import when you need to. Buy once — no subscription for your own phrases.",
   },
 ] as const;
 
@@ -42,11 +42,18 @@ const outcomes = [
 
 export function Features() {
   return (
-    <section id="features" className="border-b border-sep">
+    <section
+      id="features"
+      className="border-b border-sep"
+      aria-labelledby="features-title"
+    >
       <div className="page-shell section-pad">
         <div className="max-w-2xl">
           <p className="label-soft">Features</p>
-          <h2 className="display mt-2 text-[clamp(1.8rem,3.2vw,2.4rem)] text-ink">
+          <h2
+            id="features-title"
+            className="display mt-2 text-[clamp(1.75rem,3.2vw,2.35rem)] text-ink"
+          >
             Built for people who type the same things all day
           </h2>
           <p className="lede mt-3">
@@ -56,7 +63,6 @@ export function Features() {
           </p>
         </div>
 
-        {/* Instrument list — hairline rows, not identical icon cards */}
         <div className="mt-12 border-b border-sep">
           {features.map((f) => (
             <article key={f.title} className="feature-row group">
@@ -73,7 +79,7 @@ export function Features() {
             <div key={item.t}>
               <div className="mb-3 h-px w-8 bg-accent" aria-hidden />
               <h3 className="text-[15px] font-semibold text-ink">{item.t}</h3>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">
+              <p className="mt-1.5 text-[14px] leading-relaxed text-ink-2">
                 {item.d}
               </p>
             </div>

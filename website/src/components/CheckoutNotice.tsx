@@ -5,9 +5,13 @@ type CheckoutNoticeProps = {
   onClose: () => void;
 };
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
 export function CheckoutNotice({ open, onClose }: CheckoutNoticeProps) {
   const titleId = useId();
   const descId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
@@ -15,21 +19,47 @@ export function CheckoutNotice({ open, onClose }: CheckoutNoticeProps) {
     if (!open) return;
 
     previouslyFocused.current = document.activeElement as HTMLElement | null;
-    const t = window.setTimeout(() => closeRef.current?.focus(), 0);
+    const focusTimer = window.setTimeout(() => closeRef.current?.focus(), 0);
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
+        return;
+      }
+
+      if (e.key !== "Tab" || !panelRef.current) return;
+
+      const nodes = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ).filter((el) => !el.hasAttribute("disabled") && el.tabIndex !== -1);
+
+      if (nodes.length === 0) {
+        e.preventDefault();
+        return;
+      }
+
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey) {
+        if (active === first || !panelRef.current.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
-    window.addEventListener("keydown", onKey);
 
+    window.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
-      window.clearTimeout(t);
+      window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
       previouslyFocused.current?.focus?.();
@@ -42,18 +72,17 @@ export function CheckoutNotice({ open, onClose }: CheckoutNoticeProps) {
     <div
       className="dialog-backdrop"
       role="presentation"
-      onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
+        ref={panelRef}
         className="dialog-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descId}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
           <h2 id={titleId} className="display text-[18px] text-ink">
@@ -62,13 +91,13 @@ export function CheckoutNotice({ open, onClose }: CheckoutNoticeProps) {
           <button
             type="button"
             onClick={onClose}
-            className="btn btn-ghost -mr-1 -mt-1 rounded-[6px] px-2 py-1 text-[18px] leading-none text-ink-3"
+            className="btn btn-ghost -mr-1 -mt-1 rounded-[6px] text-[20px] leading-none text-ink-3"
             aria-label="Close dialog"
           >
             ×
           </button>
         </div>
-        <p id={descId} className="mt-2 text-[14px] leading-relaxed text-ink-2">
+        <p id={descId} className="mt-2 text-[15px] leading-relaxed text-ink-2">
           Payment and download unlock land in a follow-up. This button is a
           placeholder so the marketing page is ready to ship.
         </p>

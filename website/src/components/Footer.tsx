@@ -18,10 +18,10 @@ export function Footer({ onBuy }: FooterProps) {
             <div className="font-display text-[13px] font-semibold text-ink">
               HyperType
             </div>
-            <div className="mt-0.5 text-[12px] text-ink-3">
+            <div className="mt-0.5 text-[13px] text-ink-3">
               Type less. Everywhere.
             </div>
-            <p className="mt-3 max-w-xs text-[12px] leading-relaxed text-ink-3">
+            <p className="mt-3 max-w-xs text-[13px] leading-relaxed text-ink-2">
               Instant text expansion for Windows. One-time purchase. Snippets
               stay on your machine.
             </p>
@@ -29,28 +29,37 @@ export function Footer({ onBuy }: FooterProps) {
         </div>
 
         <nav
-          className="flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-ink-3"
+          className="flex flex-wrap gap-x-5 gap-y-1 text-[14px] text-ink-2"
           aria-label="Footer"
         >
-          <a href="#how" className="transition-colors hover:text-ink">
+          <a
+            href="#how"
+            className="inline-flex min-h-11 items-center transition-colors hover:text-ink"
+          >
             How it works
           </a>
-          <a href="#features" className="transition-colors hover:text-ink">
+          <a
+            href="#features"
+            className="inline-flex min-h-11 items-center transition-colors hover:text-ink"
+          >
             Features
           </a>
-          <a href="#pricing" className="transition-colors hover:text-ink">
+          <a
+            href="#pricing"
+            className="inline-flex min-h-11 items-center transition-colors hover:text-ink"
+          >
             Pricing
           </a>
           <button
             type="button"
             onClick={onBuy}
-            className="text-left transition-colors hover:text-ink"
+            className="inline-flex min-h-11 items-center text-left transition-colors hover:text-ink"
           >
             Buy — $19
           </button>
         </nav>
 
-        <p className="text-[12px] text-ink-3 sm:text-right">
+        <p className="text-[13px] text-ink-3 sm:text-right">
           © {new Date().getFullYear()} HyperType
           <br />
           Windows
