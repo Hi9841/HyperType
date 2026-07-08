@@ -25,64 +25,59 @@ const features = [
   },
 ] as const;
 
+const outcomes = [
+  {
+    t: "Emails that write themselves",
+    d: "Signatures, intros, and canned replies — one trigger away.",
+  },
+  {
+    t: "Fewer typos under pressure",
+    d: "Expand perfect phrases instead of racing the keyboard.",
+  },
+  {
+    t: "Same speed in every window",
+    d: "Your shortcuts follow you across the whole desktop.",
+  },
+] as const;
+
 export function Features() {
   return (
     <section id="features" className="border-b border-sep">
-      <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
+      <div className="page-shell section-pad">
         <div className="max-w-2xl">
-          <p className="text-[13px] font-semibold text-accent-ink">Features</p>
-          <h2 className="mt-2 font-display text-[clamp(1.75rem,3vw,2.25rem)] font-semibold tracking-tight text-ink">
+          <p className="label-soft">Features</p>
+          <h2 className="display mt-2 text-[clamp(1.8rem,3.2vw,2.4rem)] text-ink">
             Built for people who type the same things all day
           </h2>
-          <p className="mt-3 text-[16px] leading-relaxed text-ink-2">
+          <p className="lede mt-3">
             Support replies. Client updates. Your full address. A polite
             “thanks for waiting.” HyperType makes the boring parts of typing
             disappear.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-px overflow-hidden rounded-[10px] border border-line bg-sep sm:grid-cols-2 lg:grid-cols-3">
+        {/* Instrument list — hairline rows, not identical icon cards */}
+        <div className="mt-12 border-b border-sep">
           {features.map((f) => (
-            <article
-              key={f.title}
-              className="bg-bg p-6 transition-colors duration-150 hover:bg-raise/50"
-            >
-              <div className="mb-3 h-1 w-6 rounded-full bg-accent" />
-              <h3 className="font-display text-[16px] font-semibold text-ink">
+            <article key={f.title} className="feature-row group">
+              <h3 className="display text-[16px] text-ink transition-colors duration-150 group-hover:text-accent-ink">
                 {f.title}
               </h3>
-              <p className="mt-2 text-[14px] leading-relaxed text-ink-2">
-                {f.body}
-              </p>
+              <p className="text-[15px] leading-relaxed text-ink-2">{f.body}</p>
             </article>
           ))}
         </div>
 
-        {/* Benefit strip */}
-        <div className="mt-10 rounded-[10px] border border-line bg-raise/30 px-6 py-6 sm:px-8">
-          <div className="grid gap-6 sm:grid-cols-3">
-            {[
-              {
-                t: "Emails that write themselves",
-                d: "Signatures, intros, and canned replies — one trigger away.",
-              },
-              {
-                t: "Fewer typos under pressure",
-                d: "Expand perfect phrases instead of racing the keyboard.",
-              },
-              {
-                t: "Same speed in every window",
-                d: "Your shortcuts follow you across the whole desktop.",
-              },
-            ].map((item) => (
-              <div key={item.t}>
-                <h3 className="text-[15px] font-semibold text-ink">{item.t}</h3>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">
-                  {item.d}
-                </p>
-              </div>
-            ))}
-          </div>
+        <div className="mt-12 grid gap-8 border-t border-sep pt-10 sm:grid-cols-3 sm:gap-6">
+          {outcomes.map((item) => (
+            <div key={item.t}>
+              <div className="mb-3 h-px w-8 bg-accent" aria-hidden />
+              <h3 className="text-[15px] font-semibold text-ink">{item.t}</h3>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">
+                {item.d}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
     </section>

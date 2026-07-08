@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { CheckoutNotice } from "./components/CheckoutNotice";
 import { Features } from "./components/Features";
 import { Footer } from "./components/Footer";
@@ -18,26 +18,19 @@ export default function App() {
     setCheckoutOpen(false);
   }, []);
 
-  useEffect(() => {
-    if (!checkoutOpen) return;
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeCheckout();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [checkoutOpen, closeCheckout]);
-
   return (
     <div className="min-h-dvh bg-bg text-ink">
-      <Header />
-      <main>
-        <Hero />
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+      <Header onBuy={openCheckout} />
+      <main id="main">
+        <Hero onBuy={openCheckout} />
         <HowItWorks />
         <Features />
         <Pricing onBuy={openCheckout} />
       </main>
-      <Footer />
+      <Footer onBuy={openCheckout} />
       <CheckoutNotice open={checkoutOpen} onClose={closeCheckout} />
     </div>
   );

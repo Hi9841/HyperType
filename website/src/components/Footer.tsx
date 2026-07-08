@@ -1,22 +1,30 @@
-export function Footer() {
+type FooterProps = {
+  onBuy: () => void;
+};
+
+export function Footer({ onBuy }: FooterProps) {
   return (
     <footer className="border-t border-sep">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <div className="flex items-center gap-2.5">
+      <div className="page-shell flex flex-col gap-8 py-12 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-2.5">
           <img
             src="/logo-mark.png"
             alt=""
             width={18}
             height={18}
-            className="h-[18px] w-[18px]"
+            className="mt-0.5 h-[18px] w-[18px]"
           />
           <div>
             <div className="font-display text-[13px] font-semibold text-ink">
               HyperType
             </div>
-            <div className="text-[12px] text-ink-3">
+            <div className="mt-0.5 text-[12px] text-ink-3">
               Type less. Everywhere.
             </div>
+            <p className="mt-3 max-w-xs text-[12px] leading-relaxed text-ink-3">
+              Instant text expansion for Windows. One-time purchase. Snippets
+              stay on your machine.
+            </p>
           </div>
         </div>
 
@@ -24,19 +32,28 @@ export function Footer() {
           className="flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-ink-3"
           aria-label="Footer"
         >
-          <a href="#how" className="hover:text-ink">
+          <a href="#how" className="transition-colors hover:text-ink">
             How it works
           </a>
-          <a href="#features" className="hover:text-ink">
+          <a href="#features" className="transition-colors hover:text-ink">
             Features
           </a>
-          <a href="#pricing" className="hover:text-ink">
+          <a href="#pricing" className="transition-colors hover:text-ink">
             Pricing
           </a>
+          <button
+            type="button"
+            onClick={onBuy}
+            className="text-left transition-colors hover:text-ink"
+          >
+            Buy — $19
+          </button>
         </nav>
 
-        <p className="text-[12px] text-ink-3">
-          © {new Date().getFullYear()} HyperType · Windows
+        <p className="text-[12px] text-ink-3 sm:text-right">
+          © {new Date().getFullYear()} HyperType
+          <br />
+          Windows
         </p>
       </div>
     </footer>

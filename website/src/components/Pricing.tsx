@@ -14,23 +14,23 @@ type PricingProps = {
 export function Pricing({ onBuy }: PricingProps) {
   return (
     <section id="pricing" className="border-b border-sep">
-      <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
+      <div className="page-shell section-pad">
         <div className="mx-auto max-w-2xl text-center">
-          <p className="text-[13px] font-semibold text-accent-ink">Pricing</p>
-          <h2 className="mt-2 font-display text-[clamp(1.75rem,3vw,2.25rem)] font-semibold tracking-tight text-ink">
+          <p className="label-soft">Pricing</p>
+          <h2 className="display mt-2 text-[clamp(1.8rem,3.2vw,2.4rem)] text-ink">
             One price. Own it forever.
           </h2>
-          <p className="mt-3 text-[16px] leading-relaxed text-ink-2">
+          <p className="lede mx-auto mt-3">
             No monthly fee for typing less. Pay once, install on your Windows
             PC, and keep every hour you get back.
           </p>
         </div>
 
         <div className="mx-auto mt-12 max-w-md">
-          <div className="overflow-hidden rounded-[12px] border border-accent/50 bg-raise/40">
-            <div className="border-b border-sep bg-accent/10 px-6 py-5">
+          <div className="overflow-hidden rounded-[12px] border border-accent/45 bg-raise/40 shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_18%,transparent),0_24px_60px_-28px_rgba(124,45,255,0.45)]">
+            <div className="border-b border-sep bg-accent/10 px-6 py-6">
               <div className="flex items-end justify-between gap-4">
-                <div>
+                <div className="text-left">
                   <div className="text-[13px] font-semibold text-accent-ink">
                     HyperType
                   </div>
@@ -39,7 +39,7 @@ export function Pricing({ onBuy }: PricingProps) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-display text-[40px] leading-none font-semibold tracking-tight text-ink">
+                  <div className="display text-[44px] leading-none tracking-tight text-ink tabular-nums">
                     $19
                   </div>
                   <div className="mt-1 text-[12px] text-ink-3">one-time</div>
@@ -63,7 +63,7 @@ export function Pricing({ onBuy }: PricingProps) {
               <button
                 type="button"
                 onClick={onBuy}
-                className="flex w-full items-center justify-center rounded-[7px] bg-accent px-5 py-3 text-[15px] font-semibold text-ink transition-opacity duration-150 hover:opacity-90"
+                className="btn btn-primary btn-lg btn-block"
               >
                 Buy HyperType — $19
               </button>
