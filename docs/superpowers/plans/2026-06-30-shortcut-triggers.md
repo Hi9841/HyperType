@@ -29,7 +29,7 @@ This project currently has no `.git` (confirmed: `git rev-parse --is-inside-work
 - [ ] **Step 1: Initialize the repository and make a baseline commit**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 git init
 git add -A
 git commit -m "chore: baseline commit before shortcut-trigger feature"
@@ -74,7 +74,7 @@ Expected: succeeds, pulling in `tauri-plugin-global-shortcut`, `global-hotkey`, 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock
 git commit -m "build: add tauri-plugin-global-shortcut dependency"
 ```
@@ -368,7 +368,7 @@ This will actually fail to *build* at this point because `storage.rs`/`ipc.rs` r
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 git add src-tauri/src/snippets.rs
 git commit -m "feat: add TriggerKind to Snippets (text vs shortcut)"
 ```
@@ -709,7 +709,7 @@ Expected: `test result: ok. 21 passed; 0 failed` (15 pre-existing + 3 new `snipp
 - [ ] **Step 5: Commit**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 git add src-tauri/src/storage.rs src-tauri/src/ipc.rs
 git commit -m "feat: migrate snippet storage to a {trigger,expansion,kind} list format"
 ```
@@ -891,7 +891,7 @@ Expected: succeeds. (`ipc.rs` still has the Task-3 stopgap that treats every add
 - [ ] **Step 4: Commit**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 git add src-tauri/src/shortcuts.rs src-tauri/src/main.rs
 git commit -m "feat: register shortcut-kind snippets as OS hotkeys at startup"
 ```
@@ -1044,7 +1044,7 @@ Expected: both succeed; same test count as the end of Task 3 (`ipc.rs` has no `#
 - [ ] **Step 3: Commit**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 git add src-tauri/src/ipc.rs
 git commit -m "feat: register/unregister OS hotkeys from add_snippet/remove_snippet"
 ```
@@ -1158,7 +1158,7 @@ Expected: succeeds (vite build → `dist/`). `App.tsx` doesn't import the new `k
 - [ ] **Step 4: Commit**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 git add src/lib/ipc.ts src/lib/shortcut.ts
 git commit -m "feat: add TriggerKind to the IPC types and a chord-capture helper"
 ```
@@ -1443,7 +1443,7 @@ Expected: succeeds with no TypeScript errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 git add src/App.tsx src/styles.css
 git commit -m "feat: add Text/Shortcut mode switch and live shortcut recorder to the UI"
 ```
@@ -1459,7 +1459,7 @@ Unit tests cover chord parsing/formatting and storage migration, but OS-level ho
 - [ ] **Step 1: Build and launch**
 
 ```bash
-cd "C:\Users\hi\desktop\Hypertype"
+cd "/path/to/HyperType"
 cargo build --manifest-path src-tauri/Cargo.toml
 pnpm tauri dev
 ```

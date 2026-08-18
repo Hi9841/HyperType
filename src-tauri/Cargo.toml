@@ -4,6 +4,7 @@ version = "1.0.7"
 description = "HyperType - instant text expansion for Windows"
 authors = ["HyperType Contributors"]
 license = "MIT"
+repository = "https://github.com/Hi9841/HyperType"
 edition = "2021"
 rust-version = "1.77"
 

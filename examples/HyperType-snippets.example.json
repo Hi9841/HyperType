@@ -1,0 +1,12 @@
+[
+  {
+    "trigger": "gm",
+    "expansion": "Good morning",
+    "kind": "text"
+  },
+  {
+    "trigger": "sig",
+    "expansion": "Best regards,\nYour name",
+    "kind": "text"
+  }
+]

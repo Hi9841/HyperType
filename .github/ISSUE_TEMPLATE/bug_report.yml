@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible problem in HyperType.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues before opening a new report.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can we reproduce it?
+      description: Include the smallest reliable set of steps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: HyperType version
+      placeholder: "1.0.7"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Windows version, architecture, and relevant target application.
+    validations:
+      required: true

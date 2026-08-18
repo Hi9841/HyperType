@@ -3,6 +3,14 @@
   "version": "1.0.7",
   "description": "Instant text expansion for Windows",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hi9841/HyperType.git"
+  },
+  "homepage": "https://github.com/Hi9841/HyperType",
+  "bugs": {
+    "url": "https://github.com/Hi9841/HyperType/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
