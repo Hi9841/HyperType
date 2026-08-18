@@ -23,8 +23,8 @@ use winreg::RegKey;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     CreateFontW, CreatePen, CreateSolidBrush, DrawTextW, RoundRect, SelectObject, SetBkMode,
-    SetTextColor, CLEARTYPE_QUALITY, DT_CENTER, DT_SINGLELINE, DT_VCENTER, HDC, HFONT,
-    PS_SOLID, TRANSPARENT,
+    SetTextColor, CLEARTYPE_QUALITY, DT_CENTER, DT_SINGLELINE, DT_VCENTER, HDC, HFONT, PS_SOLID,
+    TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{DRAWITEMSTRUCT, ODS_SELECTED};
@@ -33,10 +33,10 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW,
     GetSystemMetrics, LoadCursorW, MessageBoxW, PostQuitMessage, RegisterClassW, SendMessageW,
-    ShowWindow, TranslateMessage, BS_OWNERDRAW, CS_HREDRAW, CS_VREDRAW, IDC_ARROW,
-    MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW,
-    WM_COMMAND, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DRAWITEM, WM_SETFONT, WNDCLASSW, WS_CAPTION,
-    WS_CHILD, WS_EX_APPWINDOW, WS_SYSMENU, WS_VISIBLE,
+    ShowWindow, TranslateMessage, BS_OWNERDRAW, CS_HREDRAW, CS_VREDRAW, IDC_ARROW, MB_ICONERROR,
+    MB_ICONINFORMATION, MB_OK, MSG, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, WM_COMMAND,
+    WM_CTLCOLORSTATIC, WM_DESTROY, WM_DRAWITEM, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_EX_APPWINDOW, WS_SYSMENU, WS_VISIBLE,
 };
 
 /// The app binary, baked in at build time. Building the installer therefore
@@ -70,7 +70,11 @@ static BG_BRUSH: AtomicIsize = AtomicIsize::new(0);
 fn main() {
     if std::env::args().any(|a| a == "--uninstall") {
         if let Err(e) = uninstall() {
-            message_box("HyperType could not be removed", &e.to_string(), MB_ICONERROR);
+            message_box(
+                "HyperType could not be removed",
+                &e.to_string(),
+                MB_ICONERROR,
+            );
             std::process::exit(1);
         }
         return;
@@ -87,8 +91,8 @@ fn install_dir() -> io::Result<PathBuf> {
 }
 
 fn shortcut_path() -> io::Result<PathBuf> {
-    let appdata = std::env::var_os("APPDATA")
-        .ok_or_else(|| io::Error::other("APPDATA is not set"))?;
+    let appdata =
+        std::env::var_os("APPDATA").ok_or_else(|| io::Error::other("APPDATA is not set"))?;
     Ok(PathBuf::from(appdata)
         .join(r"Microsoft\Windows\Start Menu\Programs")
         .join("HyperType.lnk"))
@@ -138,8 +142,8 @@ fn install() -> io::Result<()> {
 }
 
 fn create_shortcut(app_path: &Path) -> io::Result<()> {
-    let link = mslnk::ShellLink::new(app_path)
-        .map_err(|e| io::Error::other(format!("shortcut: {e}")))?;
+    let link =
+        mslnk::ShellLink::new(app_path).map_err(|e| io::Error::other(format!("shortcut: {e}")))?;
     link.create_lnk(shortcut_path()?)
         .map_err(|e| io::Error::other(format!("shortcut: {e}")))
 }
@@ -169,7 +173,11 @@ fn uninstall() -> io::Result<()> {
     let _ = RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(UNINSTALL_KEY);
     let _ = std::fs::remove_file(dir.join("hypertype.exe"));
 
-    message_box("HyperType", "HyperType has been removed.", MB_ICONINFORMATION);
+    message_box(
+        "HyperType",
+        "HyperType has been removed.",
+        MB_ICONINFORMATION,
+    );
 
     // uninstall.exe cannot delete itself while running; hand the final
     // cleanup to a detached cmd that waits for this process to exit.
@@ -206,8 +214,7 @@ fn run_setup_form() {
 
         // The app icon is embedded in this exe as a resource; pull the first
         // icon group so the caption and taskbar match the app everywhere.
-        let mut app_icon: windows_sys::Win32::UI::WindowsAndMessaging::HICON =
-            std::ptr::null_mut();
+        let mut app_icon: windows_sys::Win32::UI::WindowsAndMessaging::HICON = std::ptr::null_mut();
         if let Ok(me) = std::env::current_exe() {
             let path = wide(&me.to_string_lossy());
             windows_sys::Win32::UI::Shell::ExtractIconExW(
@@ -266,11 +273,35 @@ fn run_setup_form() {
         );
 
         let title_font = CreateFontW(
-            -px(20), 0, 0, 0, 600, 0, 0, 0, 0, 0, 0, CLEARTYPE_QUALITY as u32, 0,
+            -px(20),
+            0,
+            0,
+            0,
+            600,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            CLEARTYPE_QUALITY as u32,
+            0,
             wide("Segoe UI").as_ptr(),
         );
         let body_font = CreateFontW(
-            -px(13), 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, CLEARTYPE_QUALITY as u32, 0,
+            -px(13),
+            0,
+            0,
+            0,
+            400,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            CLEARTYPE_QUALITY as u32,
+            0,
             wide("Segoe UI").as_ptr(),
         );
 
@@ -278,8 +309,18 @@ fn run_setup_form() {
             let cls = wide("STATIC");
             let txt = wide(text);
             let hw = CreateWindowExW(
-                0, cls.as_ptr(), txt.as_ptr(), WS_CHILD | WS_VISIBLE,
-                x, y, w, h, hwnd, std::ptr::null_mut(), hinstance, std::ptr::null(),
+                0,
+                cls.as_ptr(),
+                txt.as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                x,
+                y,
+                w,
+                h,
+                hwnd,
+                std::ptr::null_mut(),
+                hinstance,
+                std::ptr::null(),
             );
             SendMessageW(hw, WM_SETFONT, font as WPARAM, 1);
             hw
@@ -288,8 +329,18 @@ fn run_setup_form() {
             let cls = wide("BUTTON");
             let txt = wide(text);
             let hw = CreateWindowExW(
-                0, cls.as_ptr(), txt.as_ptr(), WS_CHILD | WS_VISIBLE | BS_OWNERDRAW as u32,
-                x, y, w, h, hwnd, id as _, hinstance, std::ptr::null(),
+                0,
+                cls.as_ptr(),
+                txt.as_ptr(),
+                WS_CHILD | WS_VISIBLE | BS_OWNERDRAW as u32,
+                x,
+                y,
+                w,
+                h,
+                hwnd,
+                id as _,
+                hinstance,
+                std::ptr::null(),
             );
             SendMessageW(hw, WM_SETFONT, body_font as WPARAM, 1);
             hw
@@ -299,11 +350,19 @@ fn run_setup_form() {
         HWND_TITLE.store(title_hw as isize, Ordering::Relaxed);
         make_static(
             "Instant text expansion for Windows.",
-            px(24), px(56), px(352), px(20), body_font,
+            px(24),
+            px(56),
+            px(352),
+            px(20),
+            body_font,
         );
         make_static(
             "Installs for the current user. No admin needed.",
-            px(24), px(76), px(352), px(20), body_font,
+            px(24),
+            px(76),
+            px(352),
+            px(20),
+            body_font,
         );
 
         let close_hw = make_button("Close", ID_CLOSE, px(196), px(124), px(88), px(32));
@@ -359,7 +418,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             );
             SetTextColor(dis.hDC, text_color);
             SetBkMode(dis.hDC, TRANSPARENT as i32);
-            let label = if primary { wide("Install") } else { wide("Close") };
+            let label = if primary {
+                wide("Install")
+            } else {
+                wide("Close")
+            };
             let mut rc = dis.rcItem;
             DrawTextW(
                 dis.hDC,

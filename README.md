@@ -159,8 +159,8 @@ HyperType/
 
 ```powershell
 # 1. Clone repository
-git clone https://github.com/username/hypertype.git
-cd hypertype
+git clone https://github.com/Hi9841/HyperType.git
+cd HyperType
 
 # 2. Install frontend dependencies
 pnpm install
@@ -200,4 +200,9 @@ All 63 unit tests across engine state, snippet reordering, modifier tracking, an
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## Contributing
+
+Bug reports, documentation improvements, and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and checks.
 
