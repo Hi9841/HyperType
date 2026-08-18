@@ -1,11 +1,8 @@
 # Dependencies and build output
 node_modules/
 dist/
-website/node_modules/
-website/dist/
 src-tauri/target/
 src-tauri/gen/schemas/
-installer/target/
 
 # Local exports and user data
 HyperType-snippets.json
