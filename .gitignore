@@ -4,6 +4,15 @@ dist/
 src-tauri/target/
 src-tauri/gen/schemas/
 
+# Lock files
+Cargo.lock
+*.lock
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+bun.lockb
+bun.lock
+
 # Local exports and user data
 HyperType-snippets.json
 my_config/
