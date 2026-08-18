@@ -4,6 +4,13 @@
 //! plus `keyboard.rs` and `expansion/`, so a future macOS/Linux port only
 //! reimplements these seams.
 
+use std::path::Path;
+
+use windows::core::PWSTR;
+use windows::Win32::Foundation::{CloseHandle, HWND};
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardLayout, ToUnicodeEx, HKL};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetForegroundWindow, GetGUIThreadInfo, GetWindowLongPtrW, GetWindowTextW,
@@ -24,6 +31,7 @@ pub struct ForegroundContext {
     pub hwnd: isize,
     pub title: String,
     pub class_name: String,
+    pub process_name: String,
 }
 
 fn window_text(hwnd: windows::Win32::Foundation::HWND) -> String {
@@ -38,6 +46,43 @@ fn window_class_name(hwnd: windows::Win32::Foundation::HWND) -> String {
     String::from_utf16_lossy(&buf[..len.max(0) as usize])
 }
 
+fn process_basename(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+fn window_process_name(hwnd: HWND) -> String {
+    unsafe {
+        let mut process_id = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+        if process_id == 0 {
+            return String::new();
+        }
+
+        let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id) else {
+            return String::new();
+        };
+        let mut buffer = vec![0u16; 1024];
+        let mut len = buffer.len() as u32;
+        let queried = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut len,
+        )
+        .is_ok();
+        let _ = CloseHandle(process);
+
+        if queried {
+            process_basename(&String::from_utf16_lossy(&buffer[..len as usize]))
+        } else {
+            String::new()
+        }
+    }
+}
+
 pub fn foreground_context() -> ForegroundContext {
     unsafe {
         let fg = GetForegroundWindow();
@@ -45,6 +90,7 @@ pub fn foreground_context() -> ForegroundContext {
             hwnd: fg.0 as isize,
             title: window_text(fg),
             class_name: window_class_name(fg),
+            process_name: window_process_name(fg),
         }
     }
 }
@@ -71,7 +117,7 @@ pub fn focused_control() -> isize {
     }
 }
 
-fn foreground_keyboard_layout() -> HKL {
+pub(crate) fn foreground_keyboard_layout() -> HKL {
     unsafe {
         let fg = GetForegroundWindow();
         let tid = GetWindowThreadProcessId(fg, None);
@@ -117,5 +163,19 @@ pub fn is_password_field() -> bool {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_process_basename_from_windows_path() {
+        assert_eq!(
+            process_basename(r"C:\Program Files\WezTerm\wezterm-gui.exe"),
+            "wezterm-gui.exe"
+        );
+        assert_eq!(process_basename(""), "");
     }
 }

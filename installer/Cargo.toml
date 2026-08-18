@@ -1,7 +1,9 @@
 [package]
 name = "hypertype-installer"
-version = "1.0.5"
+version = "1.0.7"
 edition = "2021"
+authors = ["HyperType Contributors"]
+license = "MIT"
 description = "One-click installer for HyperType. Embeds the release exe; no NSIS/WiX."
 
 [[bin]]

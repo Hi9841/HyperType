@@ -1,8 +1,9 @@
 [package]
 name = "hypertype"
-version = "1.0.5"
+version = "1.0.7"
 description = "HyperType - instant text expansion for Windows"
-authors = ["HyperType"]
+authors = ["HyperType Contributors"]
+license = "MIT"
 edition = "2021"
 rust-version = "1.77"
 
@@ -27,6 +28,7 @@ windows = { version = "0.58", features = [
   "Win32_System_LibraryLoader",
   "Win32_System_DataExchange",
   "Win32_System_Memory",
+  "Win32_System_Threading",
   "Win32_Media",
 ] }
 

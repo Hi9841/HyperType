@@ -9,6 +9,18 @@ export type TriggerKind = "text" | "shortcut";
 export type InsertMode = "auto" | "paste" | "type";
 export type PasteCombo = "ctrl_v" | "shift_insert" | "ctrl_shift_v";
 
+export const MAX_TEXT_TRIGGER_CHARS = 64;
+const MAX_EXPANSION_CHARS = 1_000_000;
+
+function validateSnippet(trigger: string, expansion: string, kind: TriggerKind): void {
+  if (!trigger || !expansion) throw "Both trigger and expansion are required.";
+  if ([...expansion].length > MAX_EXPANSION_CHARS) throw "Expansion is too long.";
+  if (kind === "text") {
+    if ([...trigger].length > MAX_TEXT_TRIGGER_CHARS) throw "Text trigger is too long.";
+    if (/\p{Cc}/u.test(trigger)) throw "Text triggers cannot contain control characters.";
+  }
+}
+
 export interface SnippetView {
   trigger: string;
   expansion: string;
@@ -118,7 +130,7 @@ function browserMock(): Api {
     getStatus: async () => ({
       enabled,
       count: store.size,
-      version: "1.0.5",
+      version: "1.0.7",
       insert_mode: insertMode,
       wpm,
       paste_combo: pasteCombo,
@@ -128,13 +140,14 @@ function browserMock(): Api {
       [...store.entries()].map(([trigger, entry]) => ({ trigger, ...entry })),
     addSnippet: async (trigger, expansion, kind) => {
       const t = trigger.trim();
-      if (!t || !expansion) throw "Both trigger and expansion are required.";
+      validateSnippet(t, expansion, kind);
+      if (store.has(t)) throw "A snippet with that trigger already exists.";
       store.set(t, { expansion, kind });
     },
     editSnippet: async (oldTrigger, trigger, expansion, kind) => {
       const t = trigger.trim();
       if (!store.has(oldTrigger)) throw "Snippet not found.";
-      if (!t || !expansion) throw "Trigger and expansion are required.";
+      validateSnippet(t, expansion, kind);
       if (oldTrigger !== t && store.has(t)) {
         throw "A snippet with that trigger already exists.";
       }
@@ -187,7 +200,9 @@ function browserMock(): Api {
               const trigger = String(entry.trigger ?? "").trim();
               const expansion = String(entry.expansion ?? "");
               const kind = entry.kind === "shortcut" ? "shortcut" : "text";
-              if (!trigger || !expansion) {
+              try {
+                validateSnippet(trigger, expansion, kind);
+              } catch {
                 skipped += 1;
                 continue;
               }

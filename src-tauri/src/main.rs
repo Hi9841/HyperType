@@ -84,8 +84,7 @@ fn build_tray(app: &AppHandle, state: Arc<AppState>) -> tauri::Result<()> {
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "toggle" => {
                 let state = app.state::<Arc<AppState>>();
-                let now = !state.enabled.load(Ordering::Relaxed);
-                state.enabled.store(now, Ordering::Relaxed);
+                let now = !state.enabled.fetch_xor(true, Ordering::Relaxed);
                 let _ = toggle_item.set_checked(now);
                 // If the manager window is open, keep its switch in sync.
                 let _ = app.emit("enabled-changed", now);

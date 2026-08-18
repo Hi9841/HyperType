@@ -4,9 +4,10 @@
 use std::mem::size_of;
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-    KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, VK_BACK, VK_CONTROL, VK_INSERT, VK_LCONTROL,
-    VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT,
+    GetAsyncKeyState, SendInput, VkKeyScanExW, HKL, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+    KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, VK_BACK, VK_CONTROL,
+    VK_INSERT, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RCONTROL, VK_RETURN,
+    VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_TAB,
 };
 
 use super::PasteCombo;
@@ -201,6 +202,93 @@ fn type_units_cancellable(text: &str, token: u64, foreground: isize, focus: isiz
     completed
 }
 
+fn decode_key_mapping(mapping: i16) -> Option<(u16, u8)> {
+    if mapping == -1 {
+        return None;
+    }
+    let mapping = mapping as u16;
+    let modifiers = (mapping >> 8) as u8;
+    // VkKeyScanEx reserves higher bits for layout-specific state that cannot
+    // be represented reliably with the standard Shift/Ctrl/Alt modifiers.
+    if modifiers & !0x07 != 0 {
+        return None;
+    }
+    Some((mapping & 0x00FF, modifiers))
+}
+
+fn virtual_key_for_char(ch: char, layout: HKL) -> Option<(u16, u8)> {
+    match ch {
+        '\r' | '\n' => Some((VK_RETURN.0, 0)),
+        '\t' => Some((VK_TAB.0, 0)),
+        _ if ch as u32 <= u16::MAX as u32 => {
+            decode_key_mapping(unsafe { VkKeyScanExW(ch as u16, layout) })
+        }
+        _ => None,
+    }
+}
+
+/// Layout-aware physical key sequence. Modifier bits are the documented
+/// VkKeyScanEx values: Shift=1, Ctrl=2, Alt=4.
+fn character_steps(vk: u16, modifiers: u8) -> Vec<(u16, bool)> {
+    const MODIFIERS: [(u8, u16); 3] = [(2, VK_CONTROL.0), (4, VK_MENU.0), (1, VK_SHIFT.0)];
+    let required: Vec<u16> = MODIFIERS
+        .iter()
+        .filter(|(flag, _)| modifiers & flag != 0)
+        .map(|(_, vk)| *vk)
+        .collect();
+    let mut steps = Vec::with_capacity(required.len() * 2 + 2);
+    for &modifier in &required {
+        steps.push((modifier, false));
+    }
+    steps.push((vk, false));
+    steps.push((vk, true));
+    for &modifier in required.iter().rev() {
+        steps.push((modifier, true));
+    }
+    steps
+}
+
+fn type_virtual_keys_cancellable(text: &str, token: u64, foreground: isize, focus: isize) -> bool {
+    use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
+
+    let delay = super::char_delay();
+    let layout = crate::platform::foreground_keyboard_layout();
+    unsafe {
+        timeBeginPeriod(1);
+    }
+    let mut completed = true;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' && chars.peek() == Some(&'\n') {
+            chars.next();
+        }
+        if typeout_cancelled(token, foreground, focus) {
+            completed = false;
+            break;
+        }
+
+        let inputs: Vec<INPUT> = if let Some((vk, modifiers)) = virtual_key_for_char(ch, layout) {
+            character_steps(vk, modifiers)
+                .into_iter()
+                .map(|(vk, up)| key_vk(VIRTUAL_KEY(vk), up))
+                .collect()
+        } else {
+            let mut units = [0_u16; 2];
+            ch.encode_utf16(&mut units)
+                .iter()
+                .copied()
+                .flat_map(|unit| [key_unicode(unit, false), key_unicode(unit, true)])
+                .collect()
+        };
+        send(&inputs);
+        std::thread::sleep(delay);
+    }
+    unsafe {
+        timeEndPeriod(1);
+    }
+    completed
+}
+
 /// Native replacement in one modifier-neutral section. This matters for
 /// triggers ending in shifted punctuation like `?`: backspacing under Shift
 /// can be interpreted differently by target apps, and restoring Shift after
@@ -215,6 +303,23 @@ pub fn replace_with_unicode(trigger_char_len: usize, text: &str) {
     });
     if !completed {
         crate::logging::info("type-out expansion cancelled");
+    }
+}
+
+/// Terminal-compatible replacement using real virtual keys mapped through
+/// the foreground keyboard layout. This avoids KEYEVENTF_UNICODE, which some
+/// console and ConPTY frontends ignore. Unmappable characters retain the
+/// Unicode fallback so non-ASCII text still has a best-effort path.
+pub fn replace_with_virtual_keys(trigger_char_len: usize, text: &str) {
+    let token = super::cancel_epoch();
+    let foreground = crate::platform::foreground_window();
+    let focus = crate::platform::focused_control();
+    let completed = with_modifiers_lifted(|| {
+        backspaces(trigger_char_len);
+        type_virtual_keys_cancellable(text, token, foreground, focus)
+    });
+    if !completed {
+        crate::logging::info("terminal key-replay expansion cancelled");
     }
 }
 
