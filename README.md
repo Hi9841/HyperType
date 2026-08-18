@@ -75,11 +75,6 @@ HyperType replaces short abbreviations with full snippets anywhere in Windows as
   - Insertion strategy toggles (Auto, Type Out, Clipboard Paste).
   - Windows autostart configuration via per-user registry run keys (no administrator privileges required).
 
-### 3. Self-Contained Installer Subsystem (`installer/`)
-- In addition to standard NSIS packaging, HyperType includes a dedicated Rust-based installer (`HyperTypeSetup.exe`).
-- Embeds the compressed release binary directly into the installer executable.
-- Deploys to `%LOCALAPPDATA%\Programs\HyperType`, configures Start Menu shortcuts, and registers standard Windows Add/Remove Programs uninstall registry keys.
-
 ---
 
 ## Project Structure
@@ -88,16 +83,21 @@ HyperType replaces short abbreviations with full snippets anywhere in Windows as
 HyperType/
 ├── index.html                  # Frameless HTML entry with dark theme styling
 ├── package.json                # Frontend scripts and Tauri API bindings
+├── tsconfig.json               # TypeScript compiler options
 ├── vite.config.ts              # Vite configuration with SolidJS plugin
 ├── src/                        # Management UI (SolidJS)
 │   ├── App.tsx                 # Main settings, composer, and snippet list UI
 │   ├── main.tsx                # Frontend entrypoint
 │   ├── styles.css              # Custom OLED dark design tokens & micro-animations
+│   ├── assets/                 # App assets (logo, icons)
 │   └── lib/
-│       └── ipc.ts              # Strongly typed TypeScript wrapper for Tauri IPC
+│       ├── ipc.ts              # Strongly typed TypeScript wrapper for Tauri IPC
+│       └── shortcut.ts         # Shortcut recording and parsing utilities
 ├── src-tauri/                  # Resident Core Engine (Rust)
 │   ├── Cargo.toml              # Rust crate manifest & Windows API dependencies
 │   ├── tauri.conf.json         # Tauri v2 configuration (tray-only startup)
+│   ├── capabilities/           # Tauri security and plugin capabilities
+│   ├── icons/                  # Windows and app icons
 │   └── src/
 │       ├── main.rs             # Application entry, tray management, worker threads
 │       ├── keyboard.rs         # WH_KEYBOARD_LL hook & message pump
@@ -114,10 +114,8 @@ HyperType/
 │           ├── inject.rs       # SendInput keystroke injection & modifier masking
 │           ├── clipboard.rs    # Win32 clipboard read/write & format restoration
 │           └── e2e_tests.rs    # End-to-end expansion test suite
-├── installer/                  # Standalone Custom Installer (Rust)
-│   ├── Cargo.toml
-│   └── src/main.rs             # One-click installer with embedded binary
-└── docs/                       # Technical specifications and design documents
+└── examples/                   # Sample configuration files
+    └── HyperType-snippets.example.json
 ```
 
 ---
@@ -153,7 +151,7 @@ HyperType/
 
 1. **Operating System:** Windows 10 or 11 (x64) with Microsoft Edge WebView2 runtime.
 2. **Rust Toolchain:** Stable Rust with the MSVC toolchain (`rustup toolchain install stable-x86_64-pc-windows-msvc`). Requires Visual Studio C++ Build Tools.
-3. **Node.js & Package Manager:** Node.js 18+ and [pnpm](https://pnpm.io/) (`npm i -g pnpm`).
+3. **Node.js & Package Manager:** Node.js 18+ and `npm` or `pnpm` (`npm i -g pnpm`).
 
 ### Setup & Development
 
@@ -163,23 +161,22 @@ git clone https://github.com/Hi9841/HyperType.git
 cd HyperType
 
 # 2. Install frontend dependencies
-pnpm install
+pnpm install # or: npm install
 
 # 3. Launch in development mode (hot reload + debug core)
-pnpm tauri dev
+pnpm tauri dev # or: npm run tauri dev
 ```
 
 ### Production Build & Packaging
 
 ```powershell
-# Build release binaries and installer packages
-pnpm dist
+# Build release binaries and NSIS installer
+pnpm dist # or: npm run dist
 ```
 
 Outputs:
 - **Tauri NSIS Installer:** `src-tauri/target/release/bundle/nsis/HyperType_1.0.7_x64-setup.exe`
 - **Release Binary:** `src-tauri/target/release/hypertype.exe`
-- **Standalone Setup Form:** `installer/target/release/HyperTypeSetup.exe`
 
 ---
 
@@ -188,7 +185,6 @@ Outputs:
 Run the comprehensive Rust unit and integration test suite:
 
 ```powershell
-# Test core engine, suffix matcher, modifier recovery, and clipboard safety
 cd src-tauri
 cargo test
 ```
@@ -200,9 +196,3 @@ All 63 unit tests across engine state, snippet reordering, modifier tracking, an
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-
-## Contributing
-
-Bug reports, documentation improvements, and pull requests are welcome. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and checks.
-
