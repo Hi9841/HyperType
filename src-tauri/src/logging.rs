@@ -37,8 +37,8 @@ fn write_line(level: &str, msg: &str) {
 }
 
 pub fn info(msg: &str) {
-    write_line("INFO", msg);
     if debug_enabled() {
+        write_line("INFO", msg);
         eprintln!("[INFO] {msg}");
     }
 }

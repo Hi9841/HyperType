@@ -1,6 +1,7 @@
 import { createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import {
   api,
+  MAX_TEXT_TRIGGER_CHARS,
   onEnabledChanged,
   win,
   type InsertMode,
@@ -14,9 +15,9 @@ import logo from "./assets/logo.png";
 const INSERT_MODES: InsertMode[] = ["auto", "paste", "type"];
 const INSERT_LABEL: Record<InsertMode, string> = { auto: "Auto", paste: "Paste", type: "Type" };
 const INSERT_SUB: Record<InsertMode, string> = {
-  auto: "Types short single sentences, pastes the rest",
-  paste: "Expansions are pasted instantly",
-  type: "Expansions are typed out key by key",
+  auto: "Types up to 15 words; pastes anything longer",
+  paste: "Always pastes, at any length",
+  type: "Always types, at any length",
 };
 const PASTE_COMBOS: PasteCombo[] = ["ctrl_v", "shift_insert", "ctrl_shift_v"];
 const COMBO_LABEL: Record<PasteCombo, string> = {
@@ -62,7 +63,7 @@ export default function App() {
   let rowHeight = 36;
 
   let triggerInput: HTMLInputElement | undefined;
-  let expansionInput: HTMLInputElement | undefined;
+  let expansionInput: HTMLTextAreaElement | undefined;
   let stopRecording: (() => void) | undefined;
   let stopEditRecording: (() => void) | undefined;
 
@@ -174,6 +175,24 @@ export default function App() {
     } else if (e.key === "Escape") {
       e.currentTarget.value = String(revert);
       e.currentTarget.blur();
+    }
+  }
+
+  function updateTextTrigger(
+    input: HTMLInputElement,
+    update: (value: string) => void,
+  ) {
+    const limited = [...input.value].slice(0, MAX_TEXT_TRIGGER_CHARS).join("");
+    if (limited !== input.value) input.value = limited;
+    update(limited);
+  }
+
+  function expansionKeys(
+    e: KeyboardEvent & { currentTarget: HTMLTextAreaElement },
+  ) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      e.currentTarget.form?.requestSubmit();
     }
   }
 
@@ -571,7 +590,7 @@ export default function App() {
             <div class="setting-row reveal">
               <div class="setting-text">
                 <span class="setting-title">Paste Shortcut</span>
-                <span class="setting-sub">Terminals often paste with Shift+Ins</span>
+                <span class="setting-sub">Used whenever Auto or Paste inserts via clipboard</span>
               </div>
               <div
                 class="seg seg-mini seg-3 seg-combo"
@@ -681,20 +700,22 @@ export default function App() {
                 autocomplete="off"
                 placeholder="Trigger, e.g. gm"
                 value={trigger()}
-                onInput={(e) => setTrigger(e.currentTarget.value)}
+                onInput={(e) => updateTextTrigger(e.currentTarget, setTrigger)}
               />
             </Show>
             <span class="composer-arrow" aria-hidden="true">
               &#8594;
             </span>
-            <input
+            <textarea
               ref={expansionInput}
               class="field expansion-field"
+              rows={1}
               spellcheck={false}
               autocomplete="off"
               placeholder="Expands to, e.g. Good morning"
               value={expansion()}
               onInput={(e) => setExpansion(e.currentTarget.value)}
+              onKeyDown={expansionKeys}
             />
             <button class="add" type="submit" disabled={!canAdd()}>
               Add
@@ -868,16 +889,18 @@ export default function App() {
                                 spellcheck={false}
                                 autocomplete="off"
                                 value={editTrigger()}
-                                onInput={(e) => setEditTrigger(e.currentTarget.value)}
+                                onInput={(e) => updateTextTrigger(e.currentTarget, setEditTrigger)}
                               />
                             </Show>
                           </div>
-                          <input
+                          <textarea
                             class="field row-expansion"
+                            rows={1}
                             spellcheck={false}
                             autocomplete="off"
                             value={editExpansion()}
                             onInput={(e) => setEditExpansion(e.currentTarget.value)}
+                            onKeyDown={expansionKeys}
                           />
                           <Show when={editError()}>
                             <p class="form-error row-error" role="alert">
@@ -915,7 +938,7 @@ export default function App() {
 
       <footer class="foot">
         <span class="hint">Triggers expand anywhere in Windows, at word boundaries.</span>
-        <span class="ver">v{status()?.version ?? "1.0.5"}</span>
+        <span class="ver">v{status()?.version ?? "1.0.7"}</span>
         <button class="quit" onClick={() => api.quit()}>
           Quit HyperType
         </button>

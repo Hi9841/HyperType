@@ -186,11 +186,20 @@ fn parse_or_migrate(path: &Path, text: &str) -> Snippets {
 }
 
 pub fn save(path: &Path, snippets: &Snippets) -> std::io::Result<()> {
+    save_entries(path, snippets.list())
+}
+
+/// Persist an owned snapshot. Callers that share `Snippets` with the keyboard
+/// engine can take this snapshot under the read lock, release it, and perform
+/// JSON serialization and disk I/O without delaying keystroke matching.
+pub fn save_entries(
+    path: &Path,
+    entries: Vec<(String, String, TriggerKind)>,
+) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    let entries: Vec<StoredEntry> = snippets
-        .list()
+    let entries: Vec<StoredEntry> = entries
         .into_iter()
         .map(|(trigger, expansion, kind)| StoredEntry {
             trigger,

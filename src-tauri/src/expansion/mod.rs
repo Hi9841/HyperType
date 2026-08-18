@@ -1,12 +1,12 @@
 //! Expansion: delete the trigger, then insert the replacement. Three modes:
 //!
-//! - `Auto` (default): per-expansion choice — type short, single-sentence
-//!   snippets; paste anything long, multiline, or multi-sentence.
+//! - `Auto` (default): type snippets of 15 words or fewer; paste anything
+//!   longer.
 //! - `Paste`: save the clipboard (every byte-copyable format), set it to the
 //!   expansion, send the configured paste combo, restore. Fast and exact for
 //!   any length or content.
-//! - `Type`: type the expansion as Unicode keystrokes at the configured WPM.
-//!   Does not touch the clipboard.
+//! - `Type`: type every expansion at the configured WPM. Terminal hosts replay
+//!   layout-aware virtual keys instead of Unicode input for compatibility.
 //!
 //! All insertion policy (mode, WPM, paste combo, restore delay) lives here
 //! as atomics: set from persisted settings at startup, live from the UI via
@@ -18,7 +18,9 @@ mod e2e_tests;
 mod inject;
 
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::time::Duration;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -42,9 +44,8 @@ pub(crate) fn char_delay() -> Duration {
     Duration::from_micros(12_000_000 / wpm() as u64)
 }
 
-/// How expansions are inserted. Auto picks per-expansion: type short,
-/// single-sentence snippets; paste anything long, multiline, or
-/// multi-sentence.
+/// How expansions are inserted. Auto types snippets of 15 words or fewer and
+/// pastes anything longer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InsertMode {
@@ -69,6 +70,10 @@ static INSERT_MODE: AtomicU8 = AtomicU8::new(0);
 static PASTE_COMBO: AtomicU8 = AtomicU8::new(0);
 static RESTORE_DELAY: AtomicU32 = AtomicU32::new(5_000);
 static CANCEL_EPOCH: AtomicU64 = AtomicU64::new(0);
+static CLIPBOARD_GENERATION: AtomicU64 = AtomicU64::new(0);
+static EXPANSION_LOCK: Mutex<()> = Mutex::new(());
+static ACTIVE_CLIPBOARD: Mutex<Option<ClipboardRestore>> = Mutex::new(None);
+static RESTORE_TX: OnceLock<Option<Sender<RestoreRequest>>> = OnceLock::new();
 
 pub const RESTORE_DELAY_MIN_MS: u32 = 3_000;
 pub const RESTORE_DELAY_MAX_MS: u32 = 15_000;
@@ -81,7 +86,8 @@ const SENSITIVE_TARGET_RESTORE_MIN_MS: u32 = 12_000;
 const LONG_TEXT_RESTORE_STEP_CHARS: usize = 500;
 const LONG_TEXT_RESTORE_STEP_MS: u32 = 1_000;
 const LONG_TEXT_RESTORE_MAX_EXTRA_MS: u32 = 3_000;
-const AUTO_TYPE_MAX_CHARS: usize = 110;
+const AUTO_TYPE_MAX_WORDS: usize = 15;
+const LONG_TEXT_RESTORE_BASE_CHARS: usize = 110;
 
 pub fn set_insert_mode(mode: InsertMode) {
     INSERT_MODE.store(mode as u8, Ordering::Relaxed);
@@ -130,132 +136,304 @@ pub(crate) fn cancel_epoch() -> u64 {
 enum Mode {
     Clipboard,
     Native,
+    KeyReplay,
 }
 
-fn is_simple_sentence(text: &str) -> bool {
-    let trimmed = text.trim();
-    if trimmed.is_empty()
-        || trimmed.contains(['\r', '\n', '\t'])
-        || trimmed.chars().count() > AUTO_TYPE_MAX_CHARS
-    {
-        return false;
-    }
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TargetKind {
+    Standard,
+    Codex,
+    Terminal(PasteCombo),
+}
 
-    trimmed
-        .chars()
-        .filter(|ch| matches!(ch, '.' | '!' | '?'))
-        .count()
-        <= 1
+struct ClipboardRestore {
+    original: clipboard::Snapshot,
+    sequence: u32,
+    generation: u64,
+}
+
+#[derive(Clone, Copy)]
+struct RestoreRequest {
+    generation: u64,
+    sequence: u32,
+    delay: Duration,
+}
+
+fn word_count(text: &str) -> usize {
+    text.split_whitespace().count()
 }
 
 /// Pure mode decision, separated from the global so it can be unit-tested.
 #[cfg(test)]
 fn resolve(mode: InsertMode, text: &str) -> Mode {
-    resolve_for_target(mode, text, false)
+    resolve_for_target(mode, text, TargetKind::Standard)
 }
 
-fn resolve_for_target(mode: InsertMode, text: &str, codex_target: bool) -> Mode {
+fn resolve_for_target(mode: InsertMode, text: &str, target: TargetKind) -> Mode {
     match mode {
         InsertMode::Paste => Mode::Clipboard,
-        InsertMode::Type => Mode::Native,
-        InsertMode::Auto => {
-            if codex_target || is_simple_sentence(text) {
-                Mode::Native
-            } else {
-                Mode::Clipboard
+        InsertMode::Type => typing_mode_for_target(target),
+        InsertMode::Auto if word_count(text) <= AUTO_TYPE_MAX_WORDS => {
+            typing_mode_for_target(target)
+        }
+        InsertMode::Auto => Mode::Clipboard,
+    }
+}
+
+fn typing_mode_for_target(target: TargetKind) -> Mode {
+    if matches!(target, TargetKind::Terminal(_)) {
+        Mode::KeyReplay
+    } else {
+        Mode::Native
+    }
+}
+
+pub fn expand(trigger_char_len: usize, text: &str) {
+    // Shortcut callbacks and the keyboard engine run on different threads.
+    // Serialize SendInput sequences so simultaneous triggers cannot interleave
+    // backspaces, modifiers, or replacement text in the foreground app.
+    let _expansion = EXPANSION_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let target = crate::platform::foreground_context();
+    let target_kind = classify_target(&target);
+    match resolve_for_target(insert_mode(), text, target_kind) {
+        Mode::Clipboard => {
+            inject::delete_trigger(trigger_char_len);
+            paste_via_clipboard(text, &target, target_kind);
+        }
+        Mode::Native => inject::replace_with_unicode(trigger_char_len, text),
+        Mode::KeyReplay => inject::replace_with_virtual_keys(trigger_char_len, text),
+    }
+}
+
+fn paste_via_clipboard(
+    text: &str,
+    target: &crate::platform::ForegroundContext,
+    target_kind: TargetKind,
+) {
+    let (generation, seq, saved_contains_non_plain_text) = {
+        let mut active = ACTIVE_CLIPBOARD
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let current_sequence = clipboard::sequence_number();
+
+        // A second expansion may happen before the first delayed restore. If
+        // the clipboard is still ours, carry the original user snapshot
+        // forward instead of snapshotting the previous expansion text.
+        let saved = match active.take() {
+            Some(previous) if previous.sequence == current_sequence => previous.original,
+            _ => clipboard::snapshot(),
+        };
+
+        if !clipboard::set_unicode_text(text) {
+            // EmptyClipboard may have succeeded before allocation failed, so
+            // restore immediately before falling back to native typing.
+            clipboard::restore(&saved);
+            drop(active);
+            crate::logging::error("clipboard unavailable; expanding via direct typing");
+            inject::type_unicode(text);
+            return;
+        }
+
+        let seq = clipboard::sequence_number();
+        let generation = CLIPBOARD_GENERATION
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1);
+        let saved_contains_non_plain_text = saved.contains_non_plain_text();
+        *active = Some(ClipboardRestore {
+            original: saved,
+            sequence: seq,
+            generation,
+        });
+        (generation, seq, saved_contains_non_plain_text)
+    };
+
+    let configured_combo = paste_combo();
+    let combo = effective_paste_combo(configured_combo, target_kind);
+    if combo != configured_combo {
+        crate::logging::info(&format!(
+            "using {:?} paste for target {:?} / {:?} / {:?}",
+            combo, target.title, target.class_name, target.process_name
+        ));
+    }
+    inject::send_paste(combo);
+    // The dedicated restore worker keeps expansion non-blocking. A changed
+    // sequence number means someone else claimed the clipboard after us, so
+    // it is no longer ours to restore.
+    let restore_delay = restore_delay_for(
+        saved_contains_non_plain_text,
+        text.chars().count(),
+        target_kind != TargetKind::Standard,
+    );
+    schedule_restore(RestoreRequest {
+        generation,
+        sequence: seq,
+        delay: Duration::from_millis(restore_delay as u64),
+    });
+}
+
+fn schedule_restore(request: RestoreRequest) {
+    let tx = RESTORE_TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel();
+        match std::thread::Builder::new()
+            .name("hypertype-clipboard-restore".to_string())
+            .spawn(move || restore_worker(rx))
+        {
+            Ok(_) => Some(tx),
+            Err(e) => {
+                crate::logging::error(&format!("failed to start clipboard restore worker: {e}"));
+                None
+            }
+        }
+    });
+
+    if let Some(tx) = tx {
+        match tx.send(request) {
+            Ok(()) => (),
+            Err(e) => {
+                crate::logging::error("clipboard restore worker stopped unexpectedly");
+                schedule_fallback_restore(e.0);
+            }
+        }
+    } else {
+        schedule_fallback_restore(request);
+    }
+}
+
+fn schedule_fallback_restore(request: RestoreRequest) {
+    let queued = request;
+    if let Err(e) = std::thread::Builder::new()
+        .name("hypertype-clipboard-restore-fallback".to_string())
+        .spawn(move || {
+            std::thread::sleep(queued.delay);
+            restore_clipboard(queued);
+        })
+    {
+        crate::logging::error(&format!("failed to schedule clipboard restore: {e}"));
+        restore_clipboard(request);
+    }
+}
+
+fn restore_worker(rx: Receiver<RestoreRequest>) {
+    let mut pending: Option<(RestoreRequest, Instant)> = None;
+    loop {
+        if let Some((request, deadline)) = pending.take() {
+            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(next) => {
+                    let deadline = Instant::now() + next.delay;
+                    pending = Some((next, deadline));
+                }
+                Err(RecvTimeoutError::Timeout) => restore_clipboard(request),
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+        } else {
+            match rx.recv() {
+                Ok(request) => {
+                    let deadline = Instant::now() + request.delay;
+                    pending = Some((request, deadline));
+                }
+                Err(_) => break,
             }
         }
     }
 }
 
-pub fn expand(trigger_char_len: usize, text: &str) {
-    let target = crate::platform::foreground_context();
-    match resolve_for_target(insert_mode(), text, is_codex_target(&target)) {
-        Mode::Clipboard => {
-            inject::delete_trigger(trigger_char_len);
-            paste_via_clipboard(text, &target);
-        }
-        Mode::Native => inject::replace_with_unicode(trigger_char_len, text),
-    }
-}
-
-fn paste_via_clipboard(text: &str, target: &crate::platform::ForegroundContext) {
-    // Snapshot everything byte-copyable (text, HTML, images, file lists) so
-    // the user's clipboard survives the expansion intact.
-    let saved = clipboard::snapshot();
-    if !clipboard::set_unicode_text(text) {
-        // Clipboard was unavailable; fall back to typing so the user still
-        // gets their expansion rather than nothing.
-        crate::logging::error("clipboard unavailable; expanding via direct typing");
-        inject::type_unicode(text);
+fn restore_clipboard(request: RestoreRequest) {
+    let mut active = ACTIVE_CLIPBOARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if active.as_ref().map(|pending| pending.generation) != Some(request.generation) {
         return;
     }
-    let seq = clipboard::sequence_number();
-    let configured_combo = paste_combo();
-    let sensitive_target = prefers_shift_insert(target);
-    let combo = effective_paste_combo(configured_combo, sensitive_target);
-    if combo != configured_combo {
-        crate::logging::info(&format!(
-            "using {:?} paste for target {:?} / {:?}",
-            combo, target.title, target.class_name
-        ));
-    }
-    inject::send_paste(combo);
-    // Restore on a detached thread so expansion never blocks. The sequence
-    // number moving means someone (a user copy, another app) claimed the
-    // clipboard after us — then it is no longer ours to restore.
-    let restore_delay = restore_delay_for(
-        saved.contains_non_plain_text(),
-        text.chars().count(),
-        sensitive_target,
-    );
-    let delay = Duration::from_millis(restore_delay as u64);
-    std::thread::spawn(move || {
-        std::thread::sleep(delay);
-        if clipboard::sequence_number() == seq {
-            clipboard::restore(&saved);
-        }
-    });
-}
-
-fn effective_paste_combo(configured: PasteCombo, sensitive_target: bool) -> PasteCombo {
-    if sensitive_target && configured == PasteCombo::CtrlV {
-        PasteCombo::ShiftInsert
-    } else {
-        configured
+    let Some(pending) = active.take() else {
+        return;
+    };
+    if clipboard::sequence_number() == request.sequence {
+        clipboard::restore(&pending.original);
     }
 }
 
-fn prefers_shift_insert(target: &crate::platform::ForegroundContext) -> bool {
-    prefers_shift_insert_text(&target.title, &target.class_name)
+fn effective_paste_combo(configured: PasteCombo, target: TargetKind) -> PasteCombo {
+    if configured != PasteCombo::CtrlV {
+        return configured;
+    }
+    match target {
+        TargetKind::Terminal(preferred) => preferred,
+        // Codex reserves Ctrl+V for image attachment. Ctrl+Shift+V remains a
+        // text paste in browser/WebView input controls.
+        TargetKind::Codex => PasteCombo::CtrlShiftV,
+        TargetKind::Standard => PasteCombo::CtrlV,
+    }
 }
 
-fn is_codex_target(target: &crate::platform::ForegroundContext) -> bool {
-    is_codex_target_text(&target.title)
+fn classify_target(target: &crate::platform::ForegroundContext) -> TargetKind {
+    classify_target_parts(&target.title, &target.class_name, &target.process_name)
 }
 
-fn is_codex_target_text(title: &str) -> bool {
-    title.to_ascii_lowercase().contains("codex")
-}
-
-fn prefers_shift_insert_text(title: &str, class_name: &str) -> bool {
+fn classify_target_parts(title: &str, class_name: &str, process_name: &str) -> TargetKind {
     let title = title.to_ascii_lowercase();
     let class_name = class_name.to_ascii_lowercase();
+    let process_name = process_name.to_ascii_lowercase();
 
-    is_codex_target_text(&title)
-        || title.contains("windows terminal")
-        || title.contains("command prompt")
-        || title.contains("powershell")
-        || title.contains("pwsh")
-        || title.contains("terminal")
-        || class_name.contains("cascadia_hosting_window_class")
+    let terminal_process = matches!(
+        process_name.as_str(),
+        "windowsterminal.exe"
+            | "wezterm-gui.exe"
+            | "wezterm.exe"
+            | "alacritty.exe"
+            | "kitty.exe"
+            | "kitty_portable.exe"
+            | "mintty.exe"
+            | "conhost.exe"
+            | "conemu.exe"
+            | "conemu64.exe"
+            | "cmder.exe"
+            | "tabby.exe"
+            | "hyper.exe"
+            | "waveterm.exe"
+            | "wave.exe"
+            | "warp.exe"
+            | "rio.exe"
+            | "contour.exe"
+            | "fluentterminal.exe"
+            | "extraterm.exe"
+    );
+    let terminal_class = class_name.contains("cascadia_hosting_window_class")
         || class_name.contains("consolewindowclass")
         || class_name.contains("mintty")
         || class_name.contains("virtualconsoleclass")
+        || class_name.contains("org.wezfurlong.wezterm")
+        || class_name.contains("alacritty")
+        || class_name.contains("kitty")
+        || class_name.contains("conemu");
+    let terminal_title = title.contains("windows terminal")
+        || title.contains("command prompt")
+        || title.contains("powershell")
+        || title.contains("pwsh")
+        || title.contains("terminal");
+
+    if terminal_process || terminal_class || terminal_title {
+        let classic_console = process_name == "mintty.exe"
+            || process_name == "conhost.exe"
+            || class_name.contains("consolewindowclass")
+            || class_name.contains("mintty");
+        return TargetKind::Terminal(if classic_console {
+            PasteCombo::ShiftInsert
+        } else {
+            PasteCombo::CtrlShiftV
+        });
+    }
+
+    if process_name == "codex.exe" || title.contains("codex") {
+        TargetKind::Codex
+    } else {
+        TargetKind::Standard
+    }
 }
 
 fn long_text_restore_extra_ms(text_char_len: usize) -> u32 {
-    let extra_chars = text_char_len.saturating_sub(AUTO_TYPE_MAX_CHARS);
+    let extra_chars = text_char_len.saturating_sub(LONG_TEXT_RESTORE_BASE_CHARS);
     let steps = extra_chars.div_ceil(LONG_TEXT_RESTORE_STEP_CHARS) as u32;
     steps
         .saturating_mul(LONG_TEXT_RESTORE_STEP_MS)
@@ -300,44 +478,79 @@ mod tests {
     fn explicit_modes_ignore_content() {
         assert_eq!(resolve(InsertMode::Paste, "hi"), Mode::Clipboard);
         assert_eq!(resolve(InsertMode::Type, &"x".repeat(500)), Mode::Native);
+        assert_eq!(
+            resolve(
+                InsertMode::Paste,
+                "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"
+            ),
+            Mode::Clipboard
+        );
     }
 
     #[test]
-    fn auto_types_short_single_sentence() {
+    fn auto_types_fifteen_words_or_fewer() {
         assert_eq!(resolve(InsertMode::Auto, "Good morning"), Mode::Native);
         assert_eq!(
-            resolve(InsertMode::Auto, "This is one sentence."),
+            resolve(
+                InsertMode::Auto,
+                "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"
+            ),
             Mode::Native
         );
     }
 
     #[test]
-    fn auto_pastes_long_single_line() {
-        assert_eq!(resolve(InsertMode::Auto, &"x".repeat(111)), Mode::Clipboard);
-    }
-
-    #[test]
-    fn auto_pastes_multiline() {
-        assert_eq!(resolve(InsertMode::Auto, "Best,\nDylan"), Mode::Clipboard);
-    }
-
-    #[test]
-    fn auto_pastes_multi_sentence() {
+    fn auto_pastes_more_than_fifteen_words() {
         assert_eq!(
-            resolve(InsertMode::Auto, "First sentence. Second sentence."),
+            resolve(
+                InsertMode::Auto,
+                "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"
+            ),
             Mode::Clipboard
         );
     }
 
     #[test]
-    fn auto_types_in_codex_targets_even_for_long_text() {
+    fn auto_counts_words_across_whitespace_and_punctuation() {
         assert_eq!(
-            resolve_for_target(InsertMode::Auto, &"x".repeat(500), true),
+            resolve(InsertMode::Auto, "First sentence.\nSecond sentence!"),
             Mode::Native
         );
+        assert_eq!(word_count("  hello\tworld\r\nagain  "), 3);
+    }
+
+    #[test]
+    fn auto_uses_word_count_not_character_count() {
+        assert_eq!(resolve(InsertMode::Auto, &"x".repeat(5_000)), Mode::Native);
+    }
+
+    #[test]
+    fn explicit_type_types_structured_text() {
         assert_eq!(
-            resolve_for_target(InsertMode::Paste, &"x".repeat(500), true),
+            resolve(InsertMode::Type, "First line.\nSecond line.\tTabbed"),
+            Mode::Native
+        );
+    }
+
+    #[test]
+    fn codex_ui_avoids_its_ctrl_v_image_shortcut() {
+        let target = classify_target_parts("Codex", "Chrome_WidgetWin_1", "Codex.exe");
+        assert_eq!(target, TargetKind::Codex);
+        assert_eq!(
+            resolve_for_target(
+                InsertMode::Auto,
+                "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen",
+                target
+            ),
             Mode::Clipboard
+        );
+        assert_eq!(
+            resolve_for_target(InsertMode::Paste, &"x".repeat(500), target),
+            Mode::Clipboard
+        );
+        assert_eq!(
+            effective_paste_combo(PasteCombo::CtrlV, target),
+            PasteCombo::CtrlShiftV
         );
     }
 
@@ -360,27 +573,78 @@ mod tests {
     }
 
     #[test]
-    fn codex_like_targets_use_shift_insert_instead_of_ctrl_v() {
-        assert!(prefers_shift_insert_text("Codex", "Chrome_WidgetWin_1"));
+    fn wezterm_respects_all_three_insert_modes() {
+        let target = classify_target_parts(
+            "[2/2] accountmanagement",
+            "org.wezfurlong.wezterm",
+            "wezterm-gui.exe",
+        );
+        assert_eq!(target, TargetKind::Terminal(PasteCombo::CtrlShiftV));
         assert_eq!(
-            effective_paste_combo(PasteCombo::CtrlV, true),
-            PasteCombo::ShiftInsert
+            resolve_for_target(InsertMode::Auto, "short text", target),
+            Mode::KeyReplay
         );
         assert_eq!(
-            effective_paste_combo(PasteCombo::CtrlShiftV, true),
+            resolve_for_target(InsertMode::Type, "short text", target),
+            Mode::KeyReplay
+        );
+        assert_eq!(
+            resolve_for_target(InsertMode::Type, "first line\nsecond line", target),
+            Mode::KeyReplay
+        );
+        assert_eq!(
+            resolve_for_target(InsertMode::Paste, "short text", target),
+            Mode::Clipboard
+        );
+        assert_eq!(
+            effective_paste_combo(PasteCombo::CtrlV, target),
             PasteCombo::CtrlShiftV
+        );
+        assert_eq!(
+            effective_paste_combo(PasteCombo::ShiftInsert, target),
+            PasteCombo::ShiftInsert
         );
     }
 
     #[test]
-    fn terminal_like_targets_use_longer_restore_delay() {
-        assert!(prefers_shift_insert_text(
+    fn modern_and_classic_terminals_get_compatible_default_chords() {
+        let windows_terminal = classify_target_parts(
             "PowerShell",
-            "CASCADIA_HOSTING_WINDOW_CLASS"
-        ));
+            "CASCADIA_HOSTING_WINDOW_CLASS",
+            "WindowsTerminal.exe",
+        );
+        assert_eq!(
+            windows_terminal,
+            TargetKind::Terminal(PasteCombo::CtrlShiftV)
+        );
+        assert_eq!(
+            effective_paste_combo(PasteCombo::CtrlV, windows_terminal),
+            PasteCombo::CtrlShiftV
+        );
+
+        let classic = classify_target_parts("Command Prompt", "ConsoleWindowClass", "conhost.exe");
+        assert_eq!(classic, TargetKind::Terminal(PasteCombo::ShiftInsert));
+        assert_eq!(
+            effective_paste_combo(PasteCombo::CtrlV, classic),
+            PasteCombo::ShiftInsert
+        );
         assert_eq!(
             restore_delay_from(3_000, false, 20, true),
             SENSITIVE_TARGET_RESTORE_MIN_MS
+        );
+    }
+
+    #[test]
+    fn normal_apps_keep_existing_auto_and_ctrl_v_behavior() {
+        let target = classify_target_parts("Notes", "Notepad", "notepad.exe");
+        assert_eq!(target, TargetKind::Standard);
+        assert_eq!(
+            resolve_for_target(InsertMode::Auto, "Good morning", target),
+            Mode::Native
+        );
+        assert_eq!(
+            effective_paste_combo(PasteCombo::CtrlV, target),
+            PasteCombo::CtrlV
         );
     }
 

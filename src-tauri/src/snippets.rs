@@ -2,19 +2,22 @@
 //!
 //! Lookup is a `HashMap<trigger, Entry>` (O(1) average). A snippet is one of
 //! two kinds:
-//! - `Text`: detected by suffix matching against the rolling input buffer —
-//!   on each keystroke we test the buffer's trailing 1..=max_trigger_len
-//!   characters, longest first, so the longest trigger wins. A trigger only
+//! - `Text`: detected by walking a reverse-character index from the end of
+//!   the rolling input buffer. This avoids allocating candidate strings on
+//!   every keystroke while still selecting the longest match. A trigger only
 //!   fires when the character preceding it is a word boundary, which stops
 //!   `gm` from firing inside `programming`.
 //! - `Shortcut`: a key-chord string (e.g. "Ctrl+Shift+KeyV") registered as a
 //!   real OS hotkey by `shortcuts.rs`. It is never matched here — `kind`
-//!   filtering keeps a Shortcut entry from ever firing via typed text, and
-//!   `max_len` only ever spans Text entries.
+//!   filtering keeps a Shortcut entry from ever firing via typed text.
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+
+/// The engine's rolling buffer is intentionally bounded. Enforce the same
+/// limit at IPC boundaries so every accepted text trigger can actually fire.
+pub const MAX_TEXT_TRIGGER_CHARS: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -30,12 +33,20 @@ struct Entry {
 }
 
 #[derive(Default)]
+struct SuffixNode {
+    children: HashMap<char, SuffixNode>,
+    /// Trigger key in `Snippets::map`. Kept only at terminal nodes, so lookup
+    /// remains allocation-free until an expansion is cloned for delivery.
+    trigger: Option<String>,
+}
+
+#[derive(Default)]
 pub struct Snippets {
     map: HashMap<String, Entry>,
     /// User-visible order of triggers. Matching never touches this; it only
     /// drives `list()` (the UI and the persisted file order).
     order: Vec<String>,
-    max_len: usize,
+    suffixes: SuffixNode,
 }
 
 impl Snippets {
@@ -53,9 +64,9 @@ impl Snippets {
         let mut s = Snippets {
             map,
             order,
-            max_len: 0,
+            suffixes: SuffixNode::default(),
         };
-        s.recompute();
+        s.rebuild_suffixes();
         s
     }
 
@@ -72,19 +83,22 @@ impl Snippets {
         Self::from_entries(entries)
     }
 
-    fn recompute(&mut self) {
-        self.max_len = self
-            .map
-            .iter()
-            .filter(|(_, e)| e.kind == TriggerKind::Text)
-            .map(|(k, _)| k.chars().count())
-            .max()
-            .unwrap_or(0);
+    fn rebuild_suffixes(&mut self) {
+        let mut root = SuffixNode::default();
+        for (trigger, entry) in &self.map {
+            if entry.kind != TriggerKind::Text {
+                continue;
+            }
+            let mut node = &mut root;
+            for ch in trigger.chars().rev() {
+                node = node.children.entry(ch).or_default();
+            }
+            node.trigger = Some(trigger.clone());
+        }
+        self.suffixes = root;
     }
 
-    pub fn insert(&mut self, trigger: String, expansion: String, kind: TriggerKind) {
-        // A brand-new trigger appends to the list; editing an existing one
-        // keeps its position.
+    fn upsert(&mut self, trigger: String, expansion: String, kind: TriggerKind) {
         if self
             .map
             .insert(trigger.clone(), Entry { expansion, kind })
@@ -92,7 +106,22 @@ impl Snippets {
         {
             self.order.push(trigger);
         }
-        self.recompute();
+    }
+
+    pub fn insert(&mut self, trigger: String, expansion: String, kind: TriggerKind) {
+        // A brand-new trigger appends to the list; editing an existing one
+        // keeps its position.
+        self.upsert(trigger, expansion, kind);
+        self.rebuild_suffixes();
+    }
+
+    /// Insert a batch while rebuilding the suffix index only once. Imports can
+    /// contain thousands of entries; rebuilding after each one is quadratic.
+    pub fn insert_many(&mut self, entries: Vec<(String, String, TriggerKind)>) {
+        for (trigger, expansion, kind) in entries {
+            self.upsert(trigger, expansion, kind);
+        }
+        self.rebuild_suffixes();
     }
 
     pub fn update(
@@ -120,7 +149,7 @@ impl Snippets {
             self.order.push(new_trigger);
         }
 
-        self.recompute();
+        self.rebuild_suffixes();
         Ok(old_kind)
     }
 
@@ -129,7 +158,7 @@ impl Snippets {
         if removed.is_some() {
             self.order.retain(|t| t != trigger);
         }
-        self.recompute();
+        self.rebuild_suffixes();
         removed
     }
 
@@ -179,24 +208,30 @@ impl Snippets {
     /// character length (how many chars to delete) and the expansion text.
     /// Shortcut-kind entries are never matched here.
     pub fn match_suffix(&self, buffer: &[char]) -> Option<(usize, String)> {
-        if self.max_len == 0 || buffer.is_empty() {
+        if buffer.is_empty() {
             return None;
         }
-        let max = self.max_len.min(buffer.len());
-        for len in (1..=max).rev() {
+
+        let mut node = &self.suffixes;
+        let mut matched = None;
+        for (offset, ch) in buffer.iter().rev().enumerate() {
+            let Some(next) = node.children.get(ch) else {
+                break;
+            };
+            node = next;
+            let len = offset + 1;
             let start = buffer.len() - len;
-            // The char before the trigger must be a boundary (or buffer start).
-            if start > 0 && buffer[start - 1].is_alphanumeric() {
-                continue;
-            }
-            let candidate: String = buffer[start..].iter().collect();
-            if let Some(entry) = self.map.get(&candidate) {
-                if entry.kind == TriggerKind::Text {
-                    return Some((len, entry.expansion.clone()));
+            if start == 0 || !buffer[start - 1].is_alphanumeric() {
+                if let Some(entry) = node
+                    .trigger
+                    .as_deref()
+                    .and_then(|trigger| self.map.get(trigger))
+                {
+                    matched = Some((len, entry.expansion.clone()));
                 }
             }
         }
-        None
+        matched
     }
 }
 
@@ -242,6 +277,32 @@ mod tests {
         m.insert("addr".to_string(), "long".to_string());
         let s = Snippets::from_map(m);
         assert_eq!(s.match_suffix(&buf("addr")).unwrap().1, "long");
+    }
+
+    #[test]
+    fn unicode_triggers_match_by_character_count() {
+        let mut s = Snippets::default();
+        s.insert(
+            "\u{05e9}\u{05dc}".to_string(),
+            "\u{05e9}\u{05dc}\u{05d5}\u{05dd}".to_string(),
+            TriggerKind::Text,
+        );
+        assert_eq!(
+            s.match_suffix(&buf(" \u{05e9}\u{05dc}")),
+            Some((2, "\u{05e9}\u{05dc}\u{05d5}\u{05dd}".to_string()))
+        );
+    }
+
+    #[test]
+    fn batch_insert_updates_existing_entries_and_preserves_order() {
+        let mut s = Snippets::default();
+        s.insert("a".to_string(), "old".to_string(), TriggerKind::Text);
+        s.insert_many(vec![
+            ("b".to_string(), "second".to_string(), TriggerKind::Text),
+            ("a".to_string(), "new".to_string(), TriggerKind::Text),
+        ]);
+        assert_eq!(triggers(&s), vec!["a", "b"]);
+        assert_eq!(s.match_suffix(&buf("a")).unwrap().1, "new");
     }
 
     #[test]

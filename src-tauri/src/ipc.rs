@@ -3,8 +3,9 @@
 //! beyond sharing `AppState`; Shortcut-kind snippets are registered as real
 //! OS hotkeys via `shortcuts.rs` as part of the same add/remove call.
 
+use std::io::Read;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{fs, path::PathBuf};
 
 use serde::Serialize;
@@ -13,8 +14,35 @@ use tauri::{AppHandle, State};
 use crate::app_state::AppState;
 use crate::expansion::{self, InsertMode, PasteCombo};
 use crate::shortcuts;
-use crate::snippets::TriggerKind;
+use crate::snippets::{TriggerKind, MAX_TEXT_TRIGGER_CHARS};
 use crate::storage;
+
+const MAX_EXPANSION_CHARS: usize = 1_000_000;
+const MAX_IMPORT_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_SNIPPETS: usize = 10_000;
+static PERSIST_LOCK: Mutex<()> = Mutex::new(());
+
+fn validate_snippet(trigger: &str, expansion: &str, kind: TriggerKind) -> Result<(), String> {
+    if trigger.is_empty() || expansion.is_empty() {
+        return Err("Both trigger and expansion are required.".to_string());
+    }
+    if expansion.chars().count() > MAX_EXPANSION_CHARS {
+        return Err(format!(
+            "Expansion is too long (maximum {MAX_EXPANSION_CHARS} characters)."
+        ));
+    }
+    if kind == TriggerKind::Text {
+        if trigger.chars().count() > MAX_TEXT_TRIGGER_CHARS {
+            return Err(format!(
+                "Text trigger is too long (maximum {MAX_TEXT_TRIGGER_CHARS} characters)."
+            ));
+        }
+        if trigger.chars().any(char::is_control) {
+            return Err("Text triggers cannot contain control characters.".to_string());
+        }
+    }
+    Ok(())
+}
 
 #[derive(Serialize)]
 pub struct SnippetView {
@@ -117,21 +145,22 @@ pub fn add_snippet(
     kind: TriggerKind,
 ) -> Result<(), String> {
     let trigger = trigger.trim().to_string();
-    if trigger.is_empty() || expansion.is_empty() {
-        return Err("Both trigger and expansion are required.".to_string());
+    validate_snippet(&trigger, &expansion, kind)?;
+
+    {
+        let snippets = state.snippets.read().unwrap();
+        if snippets.get_kind(&trigger).is_some() {
+            return Err("A snippet with that trigger already exists.".to_string());
+        }
+        if snippets.len() >= MAX_SNIPPETS {
+            return Err(format!("Snippet limit reached ({MAX_SNIPPETS})."));
+        }
     }
 
     if kind == TriggerKind::Shortcut {
         // Register with the OS first: if the chord is already taken, nothing
         // is saved and the UI can show why.
         shortcuts::register_one(&app, state.inner(), &trigger, &expansion)?;
-    } else {
-        // If this exact trigger string was previously bound as a shortcut,
-        // drop the stale OS-level registration before it becomes plain text.
-        let previous_kind = state.snippets.read().unwrap().get_kind(&trigger);
-        if previous_kind == Some(TriggerKind::Shortcut) {
-            shortcuts::unregister_one(&app, &trigger);
-        }
     }
 
     {
@@ -153,9 +182,10 @@ pub fn edit_snippet(
 ) -> Result<(), String> {
     let old_trigger = old_trigger.trim().to_string();
     let trigger = trigger.trim().to_string();
-    if old_trigger.is_empty() || trigger.is_empty() || expansion.is_empty() {
+    if old_trigger.is_empty() {
         return Err("Trigger and expansion are required.".to_string());
     }
+    validate_snippet(&trigger, &expansion, kind)?;
 
     let (old_expansion, old_kind) = {
         let snippets = state.snippets.read().unwrap();
@@ -222,8 +252,8 @@ pub fn remove_snippet(
 #[tauri::command]
 pub fn export_snippets(state: State<Arc<AppState>>, path: String) -> Result<(), String> {
     let path = PathBuf::from(path);
-    let snippets = state.snippets.read().unwrap();
-    storage::save(&path, &snippets).map_err(|e| e.to_string())
+    let entries = state.snippets.read().unwrap().list();
+    storage::save_entries(&path, entries).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -232,14 +262,33 @@ pub fn import_snippets(
     state: State<Arc<AppState>>,
     path: String,
 ) -> Result<ImportSummary, String> {
-    let text = fs::read_to_string(PathBuf::from(path)).map_err(|e| e.to_string())?;
+    let path = PathBuf::from(path);
+    let mut text = String::new();
+    fs::File::open(&path)
+        .map_err(|e| e.to_string())?
+        .take(MAX_IMPORT_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|e| e.to_string())?;
+    if text.len() as u64 > MAX_IMPORT_BYTES {
+        return Err(format!(
+            "Import file is too large (maximum {} MB).",
+            MAX_IMPORT_BYTES / (1024 * 1024)
+        ));
+    }
     let imported = storage::parse_snippets(&text)?;
+    if imported.len() > MAX_SNIPPETS {
+        return Err(format!(
+            "Import contains too many snippets (maximum {MAX_SNIPPETS})."
+        ));
+    }
     let mut imported_count = 0usize;
     let mut skipped = 0usize;
+    let mut projected_count = state.snippets.read().unwrap().len();
+    let mut accepted = Vec::with_capacity(imported.len());
 
     for (trigger, expansion, kind) in imported.list() {
         let trigger = trigger.trim().to_string();
-        if trigger.is_empty() || expansion.is_empty() {
+        if validate_snippet(&trigger, &expansion, kind).is_err() {
             skipped += 1;
             continue;
         }
@@ -248,6 +297,12 @@ pub fn import_snippets(
             let snippets = state.snippets.read().unwrap();
             snippets.get(&trigger)
         };
+
+        let is_new = previous.is_none();
+        if is_new && projected_count >= MAX_SNIPPETS {
+            skipped += 1;
+            continue;
+        }
 
         if kind == TriggerKind::Shortcut {
             if let Err(e) = shortcuts::register_one(&app, state.inner(), &trigger, &expansion) {
@@ -262,14 +317,15 @@ pub fn import_snippets(
             shortcuts::unregister_one(&app, &trigger);
         }
 
-        {
-            let mut snippets = state.snippets.write().unwrap();
-            snippets.insert(trigger, expansion, kind);
+        if is_new {
+            projected_count += 1;
         }
+        accepted.push((trigger, expansion, kind));
         imported_count += 1;
     }
 
     if imported_count > 0 {
+        state.snippets.write().unwrap().insert_many(accepted);
         persist(state.inner());
     }
     Ok(ImportSummary {
@@ -289,8 +345,7 @@ pub fn reorder_snippets(state: State<Arc<AppState>>, order: Vec<String>) {
 
 #[tauri::command]
 pub fn toggle_enabled(app: AppHandle, state: State<Arc<AppState>>) -> bool {
-    let now = !state.enabled.load(Ordering::Relaxed);
-    state.enabled.store(now, Ordering::Relaxed);
+    let now = !state.enabled.fetch_xor(true, Ordering::Relaxed);
     crate::sync_tray_toggle(&app, now);
     now
 }
@@ -302,8 +357,38 @@ pub fn quit_app(app: AppHandle) {
 }
 
 fn persist(state: &Arc<AppState>) {
-    let snippets = state.snippets.read().unwrap();
-    if let Err(e) = storage::save(&state.data_path, &snippets) {
+    // Order snapshots and writes without holding the engine's snippet lock
+    // during JSON serialization or disk I/O. The last mutation therefore
+    // always produces the last on-disk snapshot.
+    let _persist = PERSIST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let entries = state.snippets.read().unwrap().list();
+    if let Err(e) = storage::save_entries(&state.data_path, entries) {
         crate::logging::error(&format!("failed to persist snippets: {e}"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unreachable_or_control_character_text_triggers() {
+        let too_long = "x".repeat(MAX_TEXT_TRIGGER_CHARS + 1);
+        assert!(validate_snippet(&too_long, "value", TriggerKind::Text).is_err());
+        assert!(validate_snippet("line\nbreak", "value", TriggerKind::Text).is_err());
+    }
+
+    #[test]
+    fn allows_unicode_text_trigger_at_character_limit() {
+        let trigger = "\u{05d0}".repeat(MAX_TEXT_TRIGGER_CHARS);
+        assert!(validate_snippet(&trigger, "value", TriggerKind::Text).is_ok());
+    }
+
+    #[test]
+    fn caps_expansion_size() {
+        let expansion = "x".repeat(MAX_EXPANSION_CHARS + 1);
+        assert!(validate_snippet("ok", &expansion, TriggerKind::Text).is_err());
     }
 }

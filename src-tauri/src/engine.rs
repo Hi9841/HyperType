@@ -18,9 +18,9 @@ use crate::expansion;
 use crate::keyboard::KeyEvent;
 use crate::platform;
 
-/// Cap the buffer so a long typing session never grows memory. Longer than any
-/// reasonable trigger.
-const MAX_BUFFER: usize = 64;
+/// Cap the buffer so a long typing session never grows memory. IPC validation
+/// uses the same limit, so an accepted text trigger is always reachable.
+const MAX_BUFFER: usize = crate::snippets::MAX_TEXT_TRIGGER_CHARS;
 
 const WM_KEYDOWN: u32 = 0x0100;
 const WM_KEYUP: u32 = 0x0101;

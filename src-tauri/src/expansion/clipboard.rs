@@ -99,7 +99,7 @@ pub fn snapshot() -> Snapshot {
                 if let Ok(handle) = GetClipboardData(fmt) {
                     let hglobal = HGLOBAL(handle.0);
                     let size = GlobalSize(hglobal);
-                    if size > 0 && total + size <= SNAPSHOT_CAP_BYTES {
+                    if size > 0 && size <= SNAPSHOT_CAP_BYTES.saturating_sub(total) {
                         let ptr = GlobalLock(hglobal) as *const u8;
                         if !ptr.is_null() {
                             let bytes = std::slice::from_raw_parts(ptr, size).to_vec();

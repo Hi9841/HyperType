@@ -406,9 +406,17 @@ button {
   border: 1px solid var(--line);
   border-radius: 7px;
   color: var(--ink);
+  font-family: inherit;
   font-size: 13px;
   outline: none;
   transition: border-color var(--fast) var(--ease-out), box-shadow var(--fast) var(--ease-out);
+}
+.expansion-field,
+.row-expansion {
+  height: 32px;
+  padding-block: 5px;
+  line-height: 18px;
+  resize: none;
 }
 .field::placeholder {
   color: var(--ink-2);
