@@ -46,14 +46,16 @@ pub fn sync_tray_toggle(app: &AppHandle, enabled: bool) {
 fn open_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
+        let _ = window.unminimize();
         let _ = window.set_focus();
     } else {
-        let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        match WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
             .title("HyperType")
-            // Fixed phone-portrait ratio (9:16); the UI is designed for
-            // exactly this footprint, so the window doesn't resize.
-            .inner_size(480.0, 854.0)
-            .resizable(false)
+            // Studio split-pane layout: wide canvas for large multi-line expansions
+            // and comfortable snippet library browsing.
+            .inner_size(960.0, 640.0)
+            .min_inner_size(780.0, 520.0)
+            .resizable(true)
             .center()
             // Frameless: the UI draws its own titlebar (drag region + window
             // buttons). Pre-paint in the UI's background color so opening the
@@ -61,7 +63,16 @@ fn open_main_window(app: &AppHandle) {
             .decorations(false)
             .theme(Some(tauri::Theme::Dark))
             .background_color(tauri::window::Color(0, 0, 0, 255))
-            .build();
+            .build()
+        {
+            Ok(w) => {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            Err(e) => {
+                eprintln!("[ERROR] open_main_window build failed: {e:?}");
+            }
+        }
     }
 }
 
@@ -144,6 +155,7 @@ fn main() {
         ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             ipc::get_status,
@@ -173,12 +185,10 @@ fn main() {
             std::thread::spawn(move || {
                 shortcuts::register_all(&handle, &register_state);
             });
-            // No window is created at startup (see tauri.conf.json windows: []).
-            // Open one only for a manual launch; an autostart launch passes
-            // --minimized and stays purely in the tray, so no WebView2 process
-            // is ever spawned at idle.
-            if !std::env::args().any(|a| a == "--minimized") {
-                open_main_window(app.handle());
+            if std::env::args().any(|a| a == "--minimized") {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
             }
             Ok(())
         })

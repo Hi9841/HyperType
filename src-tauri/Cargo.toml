@@ -1,6 +1,6 @@
 [package]
 name = "hypertype"
-version = "1.0.7"
+version = "1.1.0"
 description = "HyperType - instant text expansion for Windows"
 authors = ["HyperType Contributors"]
 license = "MIT"
@@ -17,6 +17,7 @@ tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -30,6 +31,8 @@ windows = { version = "0.58", features = [
   "Win32_System_DataExchange",
   "Win32_System_Memory",
   "Win32_System_Threading",
+  "Win32_System_SystemInformation",
+  "Win32_System_Time",
   "Win32_Media",
 ] }
 
