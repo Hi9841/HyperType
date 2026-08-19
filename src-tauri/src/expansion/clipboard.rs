@@ -121,6 +121,35 @@ pub fn snapshot() -> Snapshot {
     Snapshot { formats }
 }
 
+/// Retrieve current plain Unicode text from the clipboard if available.
+pub fn get_unicode_text() -> Option<String> {
+    if !open() {
+        return None;
+    }
+    unsafe {
+        let text = if let Ok(handle) = GetClipboardData(CF_UNICODETEXT) {
+            let hglobal = HGLOBAL(handle.0);
+            let ptr = GlobalLock(hglobal) as *const u16;
+            if !ptr.is_null() {
+                let mut len = 0;
+                while *ptr.add(len) != 0 {
+                    len += 1;
+                }
+                let slice = std::slice::from_raw_parts(ptr, len);
+                let string = String::from_utf16_lossy(slice);
+                let _ = GlobalUnlock(hglobal);
+                Some(string)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let _ = CloseClipboard();
+        text
+    }
+}
+
 /// Put a snapshot back. An empty snapshot restores an empty clipboard —
 /// never an empty *string* over whatever content remained.
 pub fn restore(snapshot: &Snapshot) {

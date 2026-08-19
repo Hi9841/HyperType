@@ -188,14 +188,371 @@ fn typing_mode_for_target(target: TargetKind) -> Mode {
     }
 }
 
+#[cfg(windows)]
+fn offset_system_time(
+    st: &windows::Win32::Foundation::SYSTEMTIME,
+    seconds_offset: i64,
+) -> windows::Win32::Foundation::SYSTEMTIME {
+    use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
+    use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToFileTime};
+
+    if seconds_offset == 0 {
+        return *st;
+    }
+    let mut ft = FILETIME::default();
+    if unsafe { SystemTimeToFileTime(st, &mut ft) }.is_err() {
+        return *st;
+    }
+    let ft_u64 = ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64);
+    let ft_offset = if seconds_offset >= 0 {
+        ft_u64.saturating_add((seconds_offset as u64).saturating_mul(10_000_000))
+    } else {
+        ft_u64.saturating_sub((seconds_offset.unsigned_abs()).saturating_mul(10_000_000))
+    };
+    let ft_new = FILETIME {
+        dwLowDateTime: (ft_offset & 0xFFFFFFFF) as u32,
+        dwHighDateTime: (ft_offset >> 32) as u32,
+    };
+    let mut st_out = SYSTEMTIME::default();
+    if unsafe { FileTimeToSystemTime(&ft_new, &mut st_out) }.is_ok() {
+        st_out
+    } else {
+        *st
+    }
+}
+
+#[cfg(windows)]
+fn format_system_time(st: &windows::Win32::Foundation::SYSTEMTIME, kind: &str, fmt: &str) -> String {
+    const MONTHS: [&str; 12] = [
+        "January", "February", "March", "April", "May", "June", "July", "August", "September",
+        "October", "November", "December",
+    ];
+    const MONTHS_SHORT: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    const DAYS: [&str; 7] = [
+        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+    ];
+    const DAYS_SHORT: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    let month_idx = (st.wMonth as usize).saturating_sub(1).min(11);
+    let month_name = MONTHS[month_idx];
+    let month_short = MONTHS_SHORT[month_idx];
+    let day_idx = (st.wDayOfWeek as usize).min(6);
+    let day_name = DAYS[day_idx];
+    let day_short = DAYS_SHORT[day_idx];
+
+    let hour_12 = if st.wHour == 0 {
+        12
+    } else if st.wHour > 12 {
+        st.wHour - 12
+    } else {
+        st.wHour
+    };
+    let am_pm = if st.wHour >= 12 { "PM" } else { "AM" };
+
+    match kind {
+        "day" => match fmt {
+            "short" => day_short.to_string(),
+            _ => day_name.to_string(),
+        },
+        "month" => match fmt {
+            "short" => month_short.to_string(),
+            _ => month_name.to_string(),
+        },
+        "year" => format!("{:04}", st.wYear),
+        "time" => match fmt {
+            "24" => format!("{:02}:{:02}", st.wHour, st.wMinute),
+            "24sec" | "24_sec" => format!("{:02}:{:02}:{:02}", st.wHour, st.wMinute, st.wSecond),
+            "sec" => format!("{}:{:02}:{:02} {}", hour_12, st.wMinute, st.wSecond, am_pm),
+            _ => format!("{}:{:02} {}", hour_12, st.wMinute, am_pm),
+        },
+        "datetime" => match fmt {
+            "24" => format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}",
+                st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute
+            ),
+            "us" => format!(
+                "{:02}/{:02}/{:04} {}:{:02} {}",
+                st.wMonth, st.wDay, st.wYear, hour_12, st.wMinute, am_pm
+            ),
+            "eu" => format!(
+                "{:02}/{:02}/{:04} {}:{:02} {}",
+                st.wDay, st.wMonth, st.wYear, hour_12, st.wMinute, am_pm
+            ),
+            _ => format!(
+                "{:04}-{:02}-{:02} {}:{:02} {}",
+                st.wYear, st.wMonth, st.wDay, hour_12, st.wMinute, am_pm
+            ),
+        },
+        _ => match fmt {
+            "us" => format!("{:02}/{:02}/{:04}", st.wMonth, st.wDay, st.wYear),
+            "eu" => format!("{:02}/{:02}/{:04}", st.wDay, st.wMonth, st.wYear),
+            "text" => format!("{}, {} {}, {:04}", day_name, month_name, st.wDay, st.wYear),
+            "short" => format!("{} {}, {:04}", month_short, st.wDay, st.wYear),
+            "compact" => format!("{:04}{:02}{:02}", st.wYear, st.wMonth, st.wDay),
+            _ => format!("{:04}-{:02}-{:02}", st.wYear, st.wMonth, st.wDay),
+        },
+    }
+}
+
+#[cfg(windows)]
+fn parse_offset(offset_str: &str) -> i64 {
+    if offset_str.is_empty() {
+        return 0;
+    }
+    let (sign, rest) = if let Some(stripped) = offset_str.strip_prefix('+') {
+        (1i64, stripped)
+    } else if let Some(stripped) = offset_str.strip_prefix('-') {
+        (-1i64, stripped)
+    } else {
+        (1i64, offset_str)
+    };
+
+    let mut num_str = String::new();
+    let mut unit = 'd';
+    for ch in rest.chars() {
+        if ch.is_ascii_digit() {
+            num_str.push(ch);
+        } else {
+            unit = ch.to_ascii_lowercase();
+            break;
+        }
+    }
+    let n: i64 = num_str.parse().unwrap_or(0);
+    let seconds_per_unit = match unit {
+        's' => 1,
+        'm' => 60,
+        'h' => 3600,
+        'w' => 7 * 86400,
+        'M' => 30 * 86400,
+        'y' => 365 * 86400,
+        _ => 86400, // 'd' default
+    };
+    sign * n * seconds_per_unit
+}
+
+#[cfg(windows)]
+pub fn resolve_template_tokens<'a>(
+    text: &'a str,
+    target: Option<&crate::platform::ForegroundContext>,
+) -> std::borrow::Cow<'a, str> {
+    if !text.contains('{') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use windows::Win32::System::SystemInformation::GetLocalTime;
+    let base_st = unsafe { GetLocalTime() };
+
+    let mut output = String::with_capacity(text.len() + 64);
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '{' {
+            let mut tag_content = String::new();
+            let mut closed = false;
+            while let Some(&inner) = chars.peek() {
+                if inner == '}' {
+                    chars.next();
+                    closed = true;
+                    break;
+                } else if inner == '\n' || inner == '{' {
+                    break;
+                } else {
+                    tag_content.push(chars.next().unwrap());
+                }
+            }
+
+            if closed && !tag_content.is_empty() {
+                let tag = tag_content.trim();
+                let (expr, fmt) = match tag.split_once(':') {
+                    Some((e, f)) => (e.trim(), f.trim()),
+                    None => (tag, ""),
+                };
+
+                let (base_kind, offset_str) = if let Some(pos) = expr.find(['+', '-']) {
+                    (&expr[..pos], &expr[pos..])
+                } else {
+                    (expr, "")
+                };
+
+                let seconds_offset = parse_offset(offset_str);
+                let st = if seconds_offset != 0 {
+                    offset_system_time(&base_st, seconds_offset)
+                } else {
+                    base_st
+                };
+
+                match base_kind.to_ascii_lowercase().as_str() {
+                    "date" => {
+                        let final_fmt = if fmt.is_empty() {
+                            if expr == "date_us" {
+                                "us"
+                            } else if expr == "date_eu" {
+                                "eu"
+                            } else if expr == "date_text" {
+                                "text"
+                            } else {
+                                ""
+                            }
+                        } else {
+                            fmt
+                        };
+                        output.push_str(&format_system_time(&st, "date", final_fmt));
+                    }
+                    "time" => {
+                        let final_fmt = if fmt.is_empty() {
+                            if expr == "time_24" { "24" } else { "" }
+                        } else {
+                            fmt
+                        };
+                        output.push_str(&format_system_time(&st, "time", final_fmt));
+                    }
+                    "datetime" => {
+                        output.push_str(&format_system_time(&st, "datetime", fmt));
+                    }
+                    "day" => {
+                        output.push_str(&format_system_time(&st, "day", fmt));
+                    }
+                    "month" => {
+                        output.push_str(&format_system_time(&st, "month", fmt));
+                    }
+                    "year" => {
+                        output.push_str(&format_system_time(&st, "year", fmt));
+                    }
+                    "clipboard" | "clip" => {
+                        let raw = clipboard::get_unicode_text().unwrap_or_default();
+                        match fmt {
+                            "quote" => {
+                                let lines: Vec<_> = raw.lines().map(|l| format!("> {l}")).collect();
+                                output.push_str(&lines.join("\n"));
+                            }
+                            "code" => {
+                                output.push_str("```\n");
+                                output.push_str(&raw);
+                                output.push_str("\n```");
+                            }
+                            "bullets" => {
+                                let lines: Vec<_> = raw.lines().map(|l| format!("- {l}")).collect();
+                                output.push_str(&lines.join("\n"));
+                            }
+                            "upper" => output.push_str(&raw.to_uppercase()),
+                            "lower" => output.push_str(&raw.to_lowercase()),
+                            "trim" => output.push_str(raw.trim()),
+                            "oneline" => {
+                                let collapsed: Vec<_> = raw.split_whitespace().collect();
+                                output.push_str(&collapsed.join(" "));
+                            }
+                            "json" => {
+                                if let Ok(json_str) = serde_json::to_string(&raw) {
+                                    output.push_str(json_str.trim_matches('"'));
+                                } else {
+                                    output.push_str(&raw);
+                                }
+                            }
+                            _ => output.push_str(&raw),
+                        }
+                    }
+                    "app" | "active_app" => {
+                        if let Some(t) = target {
+                            output.push_str(&t.process_name);
+                        }
+                    }
+                    "window" | "window_title" => {
+                        if let Some(t) = target {
+                            output.push_str(&t.title);
+                        }
+                    }
+                    "uuid" => {
+                        static UUID_COUNT: std::sync::atomic::AtomicU64 =
+                            std::sync::atomic::AtomicU64::new(1);
+                        let count = UUID_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let nanos = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|d| d.as_nanos())
+                            .unwrap_or(0);
+                        let low = (nanos as u64) ^ 0x9e3779b97f4a7c15 ^ count.rotate_left(17);
+                        let high = ((nanos >> 64) as u64) ^ 0xbf58476d1ce4e5b9 ^ count;
+                        let b0 = (high >> 32) as u32;
+                        let b1 = (high >> 16) as u16;
+                        let b2 = (0x4000 | (high & 0x0FFF)) as u16;
+                        let b3 = (0x8000 | ((low >> 48) & 0x3FFF)) as u16;
+                        let b4 = low & 0xFFFFFFFFFFFF;
+                        output.push_str(&format!(
+                            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+                            b0, b1, b2, b3, b4
+                        ));
+                    }
+                    "timestamp" => {
+                        let ts = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        output.push_str(&ts.to_string());
+                    }
+                    "random_pin" | "pin" => {
+                        let nanos = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|d| d.as_nanos())
+                            .unwrap_or(0);
+                        let pin = (nanos % 900_000) + 100_000;
+                        output.push_str(&format!("{pin:06}"));
+                    }
+                    "delimiter" | "nonce" => {
+                        let nanos = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|d| d.as_nanos())
+                            .unwrap_or(0);
+                        let hex = format!("{:08x}", (nanos as u32) ^ 0xa5a5a5a5);
+                        output.push_str(&format!("<<<BOUNDARY_{hex}>>>"));
+                    }
+                    "username" => {
+                        let user = std::env::var("USERNAME").unwrap_or_else(|_| "User".into());
+                        output.push_str(&user);
+                    }
+                    "computer" => {
+                        let pc = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "PC".into());
+                        output.push_str(&pc);
+                    }
+                    _ => {
+                        // Unrecognized token, keep as original literal
+                        output.push('{');
+                        output.push_str(&tag_content);
+                        output.push('}');
+                    }
+                }
+            } else {
+                output.push('{');
+                output.push_str(&tag_content);
+                if closed {
+                    output.push('}');
+                }
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    std::borrow::Cow::Owned(output)
+}
+
+#[cfg(not(windows))]
+pub fn resolve_template_tokens<'a>(
+    text: &'a str,
+    _target: Option<&crate::platform::ForegroundContext>,
+) -> std::borrow::Cow<'a, str> {
+    std::borrow::Cow::Borrowed(text)
+}
+
 pub fn expand(trigger_char_len: usize, text: &str) {
+    let target = crate::platform::foreground_context();
+    let resolved = resolve_template_tokens(text, Some(&target));
+    let text = resolved.as_ref();
     // Shortcut callbacks and the keyboard engine run on different threads.
     // Serialize SendInput sequences so simultaneous triggers cannot interleave
     // backspaces, modifiers, or replacement text in the foreground app.
     let _expansion = EXPANSION_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let target = crate::platform::foreground_context();
     let target_kind = classify_target(&target);
     match resolve_for_target(insert_mode(), text, target_kind) {
         Mode::Clipboard => {
@@ -651,5 +1008,35 @@ mod tests {
     #[test]
     fn long_pastes_keep_text_clipboard_alive_longer() {
         assert_eq!(restore_delay_from(12_000, false, 1_200, true), 15_000);
+    }
+
+    #[test]
+    fn template_tokens_resolve_or_pass_through() {
+        let plain = "Hello world";
+        assert_eq!(resolve_template_tokens(plain, None).as_ref(), plain);
+
+        let date_template = "Today is {date}";
+        let resolved_date = resolve_template_tokens(date_template, None);
+        assert!(!resolved_date.contains("{date}"));
+        assert!(resolved_date.starts_with("Today is "));
+
+        let date_offset = "{date+1d} vs {date-1d} vs {date+7d:us}";
+        let resolved_offset = resolve_template_tokens(date_offset, None);
+        assert!(!resolved_offset.contains("{date"));
+
+        let time_template = "Time is {time}";
+        let resolved_time = resolve_template_tokens(time_template, None);
+        assert!(!resolved_time.contains("{time}"));
+        assert!(resolved_time.contains("AM") || resolved_time.contains("PM"));
+
+        let uuid_template = "ID: {uuid}";
+        let resolved_uuid = resolve_template_tokens(uuid_template, None);
+        assert!(!resolved_uuid.contains("{uuid}"));
+        assert_eq!(resolved_uuid.len(), 40); // "ID: " (4) + 36 chars UUID
+
+        let year_template = "Copyright {year}";
+        let resolved_year = resolve_template_tokens(year_template, None);
+        assert!(!resolved_year.contains("{year}"));
+        assert!(resolved_year.starts_with("Copyright "));
     }
 }
