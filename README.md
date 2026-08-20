@@ -8,6 +8,14 @@
 [![SolidJS](https://img.shields.io/badge/SolidJS-1.9-446b9e.svg)](https://www.solidjs.com)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D6.svg)](https://www.microsoft.com/windows)
 
+
+
+
+https://github.com/user-attachments/assets/14c23aa1-f9cc-4825-957a-bc2d94b228b0
+
+
+
+
 HyperType replaces short abbreviations with full snippets anywhere in Windows as you type (`gm` → `Good morning`, `addr` → your complete address, `sig` → email signature). Built as a native Windows utility, HyperType is engineered with a strict two-plane separation: a lightweight, resident Rust engine on the hot path, and an ephemeral SolidJS / WebView2 interface summoned only when managing snippets.
 
 ---
