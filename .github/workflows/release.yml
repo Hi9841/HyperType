@@ -52,15 +52,19 @@ jobs:
       - name: Validate updater signing credentials
         shell: pwsh
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RAW_PASS: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+          if ([string]::IsNullOrWhiteSpace($env:RAW_KEY)) {
             throw "TAURI_SIGNING_PRIVATE_KEY is not configured"
           }
-          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+          if ([string]::IsNullOrWhiteSpace($env:RAW_PASS)) {
             throw "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not configured"
           }
+          $cleanKey = $env:RAW_KEY.Trim([char]0xFEFF, "`r", "`n", " ")
+          $cleanPass = $env:RAW_PASS.Trim("`r", "`n", " ")
+          "TAURI_SIGNING_PRIVATE_KEY=$cleanKey" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8NoBOM
+          "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$cleanPass" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8NoBOM
 
       - name: Run frontend typecheck
         run: bunx tsc --noEmit
@@ -72,8 +76,8 @@ jobs:
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "HyperType ${{ github.ref_name }}"
