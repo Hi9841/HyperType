@@ -111,8 +111,10 @@ export default function App() {
         setUpdateStatusText("Update installed. Restart HyperType.");
         setUpdateDownloading(false);
       }
-    } catch {
-      setUpdateStatusText("Update failed. Try again.");
+    } catch (err) {
+      console.error("[updater] downloadAndInstall error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setUpdateStatusText(`Update failed: ${msg.slice(0, 45)}`);
       setUpdateDownloading(false);
     }
   }
