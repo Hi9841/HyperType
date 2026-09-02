@@ -50,6 +50,9 @@ impl EngineHost for WinHost {
         platform::is_password_field()
     }
     fn expand(&self, trigger_char_len: usize, text: &str) {
+        // The hook has returned, but Windows may still be dispatching the final
+        // trigger key. Give it one scheduler tick before sending backspaces.
+        thread::sleep(std::time::Duration::from_millis(1));
         expansion::expand(trigger_char_len, text);
     }
 }
@@ -195,7 +198,9 @@ fn run(state: Arc<AppState>, rx: Receiver<KeyEvent>) {
     let mut engine = Engine::new();
     // recv() blocks until the hook sends; the thread sleeps otherwise (0% CPU).
     while let Ok(ev) = rx.recv() {
+        let sequence = ev.sequence;
         engine.handle(&host, &state, ev);
+        crate::keyboard::mark_processed(sequence);
     }
 }
 
@@ -280,6 +285,7 @@ mod tests {
             host,
             state,
             KeyEvent {
+                sequence: 0,
                 message: WM_KEYDOWN,
                 vk,
                 scan: 0,

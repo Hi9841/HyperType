@@ -1,7 +1,7 @@
 //! Expansion: delete the trigger, then insert the replacement. Three modes:
 //!
-//! - `Auto` (default): type snippets of 15 words or fewer; paste anything
-//!   longer.
+//! - `Auto` (default): insert short expansions in one atomic input batch and
+//!   paste longer content through the target's compatible shortcut.
 //! - `Paste`: save the clipboard (every byte-copyable format), set it to the
 //!   expansion, send the configured paste combo, restore. Fast and exact for
 //!   any length or content.
@@ -44,8 +44,8 @@ pub(crate) fn char_delay() -> Duration {
     Duration::from_micros(12_000_000 / wpm() as u64)
 }
 
-/// How expansions are inserted. Auto types snippets of 15 words or fewer and
-/// pastes anything longer.
+/// How expansions are inserted. Auto uses atomic input for short content and
+/// target-aware clipboard insertion for long content.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InsertMode {
@@ -86,8 +86,8 @@ const SENSITIVE_TARGET_RESTORE_MIN_MS: u32 = 12_000;
 const LONG_TEXT_RESTORE_STEP_CHARS: usize = 500;
 const LONG_TEXT_RESTORE_STEP_MS: u32 = 1_000;
 const LONG_TEXT_RESTORE_MAX_EXTRA_MS: u32 = 3_000;
-const AUTO_TYPE_MAX_WORDS: usize = 15;
 const LONG_TEXT_RESTORE_BASE_CHARS: usize = 110;
+const AUTO_ATOMIC_MAX_CHARS: usize = 256;
 
 pub fn set_insert_mode(mode: InsertMode) {
     INSERT_MODE.store(mode as u8, Ordering::Relaxed);
@@ -135,6 +135,8 @@ pub(crate) fn cancel_epoch() -> u64 {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Mode {
     Clipboard,
+    AtomicNative,
+    AtomicKeyReplay,
     Native,
     KeyReplay,
 }
@@ -159,10 +161,6 @@ struct RestoreRequest {
     delay: Duration,
 }
 
-fn word_count(text: &str) -> usize {
-    text.split_whitespace().count()
-}
-
 /// Pure mode decision, separated from the global so it can be unit-tested.
 #[cfg(test)]
 fn resolve(mode: InsertMode, text: &str) -> Mode {
@@ -173,10 +171,18 @@ fn resolve_for_target(mode: InsertMode, text: &str, target: TargetKind) -> Mode 
     match mode {
         InsertMode::Paste => Mode::Clipboard,
         InsertMode::Type => typing_mode_for_target(target),
-        InsertMode::Auto if word_count(text) <= AUTO_TYPE_MAX_WORDS => {
-            typing_mode_for_target(target)
+        InsertMode::Auto if text.chars().count() <= AUTO_ATOMIC_MAX_CHARS => {
+            atomic_mode_for_target(target)
         }
         InsertMode::Auto => Mode::Clipboard,
+    }
+}
+
+fn atomic_mode_for_target(target: TargetKind) -> Mode {
+    if matches!(target, TargetKind::Terminal(_)) {
+        Mode::AtomicKeyReplay
+    } else {
+        Mode::AtomicNative
     }
 }
 
@@ -222,16 +228,36 @@ fn offset_system_time(
 }
 
 #[cfg(windows)]
-fn format_system_time(st: &windows::Win32::Foundation::SYSTEMTIME, kind: &str, fmt: &str) -> String {
+fn format_system_time(
+    st: &windows::Win32::Foundation::SYSTEMTIME,
+    kind: &str,
+    fmt: &str,
+) -> String {
     const MONTHS: [&str; 12] = [
-        "January", "February", "March", "April", "May", "June", "July", "August", "September",
-        "October", "November", "December",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     ];
     const MONTHS_SHORT: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     const DAYS: [&str; 7] = [
-        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
     ];
     const DAYS_SHORT: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -402,7 +428,11 @@ pub fn resolve_template_tokens<'a>(
                     }
                     "time" => {
                         let final_fmt = if fmt.is_empty() {
-                            if expr == "time_24" { "24" } else { "" }
+                            if expr == "time_24" {
+                                "24"
+                            } else {
+                                ""
+                            }
                         } else {
                             fmt
                         };
@@ -555,16 +585,16 @@ pub fn expand(trigger_char_len: usize, text: &str) {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let target_kind = classify_target(&target);
     match resolve_for_target(insert_mode(), text, target_kind) {
-        Mode::Clipboard => {
-            inject::delete_trigger(trigger_char_len);
-            paste_via_clipboard(text, &target, target_kind);
-        }
+        Mode::Clipboard => paste_via_clipboard(trigger_char_len, text, &target, target_kind),
+        Mode::AtomicNative => inject::replace_with_unicode_atomic(trigger_char_len, text),
+        Mode::AtomicKeyReplay => inject::replace_with_virtual_keys_atomic(trigger_char_len, text),
         Mode::Native => inject::replace_with_unicode(trigger_char_len, text),
         Mode::KeyReplay => inject::replace_with_virtual_keys(trigger_char_len, text),
     }
 }
 
 fn paste_via_clipboard(
+    trigger_char_len: usize,
     text: &str,
     target: &crate::platform::ForegroundContext,
     target_kind: TargetKind,
@@ -589,7 +619,12 @@ fn paste_via_clipboard(
             clipboard::restore(&saved);
             drop(active);
             crate::logging::error("clipboard unavailable; expanding via direct typing");
-            inject::type_unicode(text);
+            match atomic_mode_for_target(target_kind) {
+                Mode::AtomicKeyReplay => {
+                    inject::replace_with_virtual_keys_atomic(trigger_char_len, text)
+                }
+                _ => inject::replace_with_unicode_atomic(trigger_char_len, text),
+            }
             return;
         }
 
@@ -614,7 +649,7 @@ fn paste_via_clipboard(
             combo, target.title, target.class_name, target.process_name
         ));
     }
-    inject::send_paste(combo);
+    inject::replace_with_paste(trigger_char_len, combo);
     // The dedicated restore worker keeps expansion non-blocking. A changed
     // sequence number means someone else claimed the clipboard after us, so
     // it is no longer ours to restore.
@@ -845,40 +880,24 @@ mod tests {
     }
 
     #[test]
-    fn auto_types_fifteen_words_or_fewer() {
-        assert_eq!(resolve(InsertMode::Auto, "Good morning"), Mode::Native);
+    fn auto_inserts_short_text_atomically_and_pastes_long_text() {
         assert_eq!(
-            resolve(
-                InsertMode::Auto,
-                "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen"
-            ),
-            Mode::Native
+            resolve(InsertMode::Auto, "Good morning"),
+            Mode::AtomicNative
         );
-    }
-
-    #[test]
-    fn auto_pastes_more_than_fifteen_words() {
         assert_eq!(
-            resolve(
-                InsertMode::Auto,
-                "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen"
-            ),
+            resolve(InsertMode::Auto, &"x".repeat(AUTO_ATOMIC_MAX_CHARS + 1)),
             Mode::Clipboard
         );
     }
 
     #[test]
-    fn auto_counts_words_across_whitespace_and_punctuation() {
+    fn auto_uses_atomic_key_replay_in_terminals() {
+        let terminal = TargetKind::Terminal(PasteCombo::CtrlShiftV);
         assert_eq!(
-            resolve(InsertMode::Auto, "First sentence.\nSecond sentence!"),
-            Mode::Native
+            resolve_for_target(InsertMode::Auto, "codex --yolo", terminal),
+            Mode::AtomicKeyReplay
         );
-        assert_eq!(word_count("  hello\tworld\r\nagain  "), 3);
-    }
-
-    #[test]
-    fn auto_uses_word_count_not_character_count() {
-        assert_eq!(resolve(InsertMode::Auto, &"x".repeat(5_000)), Mode::Native);
     }
 
     #[test]
@@ -896,7 +915,7 @@ mod tests {
         assert_eq!(
             resolve_for_target(
                 InsertMode::Auto,
-                "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen",
+                &"x".repeat(AUTO_ATOMIC_MAX_CHARS + 1),
                 target
             ),
             Mode::Clipboard
@@ -930,7 +949,7 @@ mod tests {
     }
 
     #[test]
-    fn wezterm_respects_all_three_insert_modes() {
+    fn wezterm_uses_compatible_modes_and_paste_chords() {
         let target = classify_target_parts(
             "[2/2] accountmanagement",
             "org.wezfurlong.wezterm",
@@ -939,7 +958,7 @@ mod tests {
         assert_eq!(target, TargetKind::Terminal(PasteCombo::CtrlShiftV));
         assert_eq!(
             resolve_for_target(InsertMode::Auto, "short text", target),
-            Mode::KeyReplay
+            Mode::AtomicKeyReplay
         );
         assert_eq!(
             resolve_for_target(InsertMode::Type, "short text", target),
@@ -992,12 +1011,12 @@ mod tests {
     }
 
     #[test]
-    fn normal_apps_keep_existing_auto_and_ctrl_v_behavior() {
+    fn normal_apps_use_atomic_auto_and_ctrl_v() {
         let target = classify_target_parts("Notes", "Notepad", "notepad.exe");
         assert_eq!(target, TargetKind::Standard);
         assert_eq!(
             resolve_for_target(InsertMode::Auto, "Good morning", target),
-            Mode::Native
+            Mode::AtomicNative
         );
         assert_eq!(
             effective_paste_combo(PasteCombo::CtrlV, target),
