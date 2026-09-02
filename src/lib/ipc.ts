@@ -109,7 +109,7 @@ const tauriApi: Api = {
   quit: () => invoke<void>("quit_app"),
 };
 
-// In-memory stand-in for `pnpm dev` in a plain browser, where no Tauri
+// In-memory stand-in for `bun run dev` in a plain browser, where no Tauri
 // backend answers invoke(). Seeded like storage::load_or_default so the UI
 // can be exercised and styled without the Rust core.
 function browserMock(): Api {
@@ -130,7 +130,7 @@ function browserMock(): Api {
     getStatus: async () => ({
       enabled,
       count: store.size,
-      version: "1.0.7",
+      version: "1.1.1",
       insert_mode: insertMode,
       wpm,
       paste_combo: pasteCombo,

@@ -10,6 +10,7 @@ import {
   type TriggerKind,
 } from "./lib/ipc";
 import { chordFromEvent, chordKeys } from "./lib/shortcut";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import {
   IconCheck,
@@ -31,7 +32,7 @@ import logo from "./assets/logo.png";
 const INSERT_MODES: InsertMode[] = ["auto", "paste", "type"];
 const INSERT_LABEL: Record<InsertMode, string> = { auto: "Auto", paste: "Paste", type: "Type" };
 const INSERT_SUB: Record<InsertMode, string> = {
-  auto: "Types up to 15 words; pastes anything longer",
+  auto: "Inserts short text atomically; pastes long text",
   paste: "Always pastes via clipboard",
   type: "Always types at configured WPM",
 };
@@ -103,8 +104,15 @@ export default function App() {
           if (total > 0) setUpdateProgress(Math.round((downloaded / total) * 100));
         }
       });
+      setUpdateStatusText("Update installed. Restarting...");
+      try {
+        await relaunch();
+      } catch {
+        setUpdateStatusText("Update installed. Restart HyperType.");
+        setUpdateDownloading(false);
+      }
     } catch {
-      setUpdateStatusText("Download failed");
+      setUpdateStatusText("Update failed. Try again.");
       setUpdateDownloading(false);
     }
   }
@@ -1010,7 +1018,7 @@ export default function App() {
 
             <div class="settings-modal-footer">
               <div class="footer-version-group">
-                <span class="app-version-tag">HyperType v{status()?.version ?? "1.1.0"}</span>
+                <span class="app-version-tag">HyperType v{status()?.version ?? "1.1.1"}</span>
                 <Show when={!updateInfo()}>
                   <button
                     type="button"

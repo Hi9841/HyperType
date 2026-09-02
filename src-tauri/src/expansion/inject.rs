@@ -19,6 +19,10 @@ const VK_V: u16 = 0x56;
 const VK_MASK: u16 = 0xE8;
 
 fn key_vk(vk: VIRTUAL_KEY, up: bool) -> INPUT {
+    key_vk_with_signature(vk, up, crate::consts::INJECT_SIGNATURE)
+}
+
+fn key_vk_with_signature(vk: VIRTUAL_KEY, up: bool, signature: usize) -> INPUT {
     let mut flags = KEYBD_EVENT_FLAGS(0);
     if up {
         flags |= KEYEVENTF_KEYUP;
@@ -31,7 +35,7 @@ fn key_vk(vk: VIRTUAL_KEY, up: bool) -> INPUT {
                 wScan: 0,
                 dwFlags: flags,
                 time: 0,
-                dwExtraInfo: crate::consts::INJECT_SIGNATURE,
+                dwExtraInfo: signature,
             },
         },
     }
@@ -147,33 +151,7 @@ fn with_modifiers_lifted<T>(work: impl FnOnce() -> T) -> T {
     result
 }
 
-/// Delete the trigger while neutralizing any modifier that was part of the
-/// trigger's final keypress, then restore only keys the user still holds.
-pub fn delete_trigger(n: usize) {
-    if n == 0 {
-        return;
-    }
-    with_modifiers_lifted(|| backspaces(n));
-}
-
-/// Type text as Unicode (layout-independent; supports emoji via surrogate
-/// pairs since we send each UTF-16 unit). Physically-held modifiers are
-/// lifted first and restored at the end, mirroring the paste path, so the
-/// logical key state always matches the user's hands. Each character goes
-/// out as its own SendInput call at the user's configured WPM — Keysmith-
-/// style keystroke replay — which slow apps and terminals handle far more
-/// reliably than one giant batch.
-pub fn type_unicode(text: &str) {
-    let token = super::cancel_epoch();
-    let foreground = crate::platform::foreground_window();
-    let focus = crate::platform::focused_control();
-    let completed =
-        with_modifiers_lifted(|| type_units_cancellable(text, token, foreground, focus));
-    if !completed {
-        crate::logging::info("type-out expansion cancelled");
-    }
-}
-
+// Paced Type mode stops when the user types again or focus changes.
 fn typeout_cancelled(token: u64, foreground: isize, focus: isize) -> bool {
     super::cancel_epoch() != token
         || crate::platform::foreground_window() != foreground
@@ -323,6 +301,67 @@ pub fn replace_with_virtual_keys(trigger_char_len: usize, text: &str) {
     }
 }
 
+fn send_atomic_replacement(trigger_char_len: usize, content: Vec<INPUT>) {
+    let held = held_of(&ALL_MODIFIERS);
+    let mut inputs = Vec::with_capacity(held.len() + trigger_char_len * 2 + content.len());
+
+    for &vk in &held {
+        inputs.push(key_vk(VIRTUAL_KEY(vk), true));
+    }
+    for _ in 0..trigger_char_len {
+        inputs.push(key_vk(VK_BACK, false));
+        inputs.push(key_vk(VK_BACK, true));
+    }
+    inputs.extend(content);
+
+    // SendInput serializes one batch ahead of physical keyboard input. Keeping
+    // deletion and insertion together prevents Enter from landing between them.
+    send(&inputs);
+
+    // A trigger-ending modifier may have been released while the batch was
+    // built. Recheck physical state so that release cannot leave it stuck down.
+    let current = held_of(&ALL_MODIFIERS);
+    restore_modifiers(&still_held(&held, &current));
+}
+
+/// Replace a short trigger with Unicode input in one Windows input batch.
+pub fn replace_with_unicode_atomic(trigger_char_len: usize, text: &str) {
+    let content = text
+        .encode_utf16()
+        .flat_map(|unit| [key_unicode(unit, false), key_unicode(unit, true)])
+        .collect();
+    send_atomic_replacement(trigger_char_len, content);
+}
+
+/// Replace a short terminal trigger with layout-aware keys in one input batch.
+pub fn replace_with_virtual_keys_atomic(trigger_char_len: usize, text: &str) {
+    let layout = crate::platform::foreground_keyboard_layout();
+    let mut content = Vec::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' && chars.peek() == Some(&'\n') {
+            chars.next();
+        }
+
+        if let Some((vk, modifiers)) = virtual_key_for_char(ch, layout) {
+            content.extend(
+                character_steps(vk, modifiers)
+                    .into_iter()
+                    .map(|(vk, up)| key_vk(VIRTUAL_KEY(vk), up)),
+            );
+        } else {
+            let mut units = [0_u16; 2];
+            content.extend(
+                ch.encode_utf16(&mut units)
+                    .iter()
+                    .copied()
+                    .flat_map(|unit| [key_unicode(unit, false), key_unicode(unit, true)]),
+            );
+        }
+    }
+    send_atomic_replacement(trigger_char_len, content);
+}
+
 /// Map a specific left/right modifier VK to its generic class so a combo's
 /// required modifiers (generic) can be matched against physically-held keys.
 fn modifier_class(vk: u16) -> u16 {
@@ -345,6 +384,31 @@ fn combo_parts(combo: PasteCombo) -> (&'static [u16], u16) {
         PasteCombo::ShiftInsert => (SHIFT, VK_INSERT.0),
         PasteCombo::CtrlShiftV => (CTRL_SHIFT, VK_V),
     }
+}
+
+fn atomic_paste_steps(
+    trigger_char_len: usize,
+    required: &[u16],
+    key: u16,
+    held: &[u16],
+) -> Vec<(u16, bool)> {
+    let mut steps = Vec::with_capacity(held.len() + trigger_char_len * 2 + required.len() * 2 + 2);
+    for &vk in held {
+        steps.push((vk, true));
+    }
+    for _ in 0..trigger_char_len {
+        steps.push((VK_BACK.0, false));
+        steps.push((VK_BACK.0, true));
+    }
+    for &vk in required {
+        steps.push((vk, false));
+    }
+    steps.push((key, false));
+    steps.push((key, true));
+    for &vk in required.iter().rev() {
+        steps.push((vk, true));
+    }
+    steps
 }
 
 /// The (virtual key, is_key_up) sequence for a paste combo that may fire
@@ -404,13 +468,43 @@ fn paste_steps(required: &[u16], key: u16, held: &[u16]) -> Vec<(u16, bool)> {
 /// goes out in a single SendInput batch, so the lift/restore around the
 /// paste is atomic — there is no window where a physical release can
 /// interleave.
-pub fn send_paste(combo: PasteCombo) {
+/// Delete a trigger and send the paste chord in one Windows input batch.
+pub fn replace_with_paste(trigger_char_len: usize, combo: PasteCombo) {
     let (required, key) = combo_parts(combo);
     let held = held_of(&ALL_MODIFIERS);
-    let inputs: Vec<INPUT> = paste_steps(required, key, &held)
+    let atomic_text_trigger = trigger_char_len > 0;
+    let steps = if atomic_text_trigger {
+        atomic_paste_steps(trigger_char_len, required, key, &held)
+    } else {
+        paste_steps(required, key, &held)
+    };
+    let inputs = steps
         .into_iter()
         .map(|(vk, up)| key_vk(VIRTUAL_KEY(vk), up))
-        .collect();
+        .collect::<Vec<_>>();
+    send(&inputs);
+    if atomic_text_trigger {
+        let current = held_of(&ALL_MODIFIERS);
+        restore_modifiers(&still_held(&held, &current));
+    }
+}
+
+#[cfg(test)]
+pub(super) fn send_enter_for_test() {
+    send(&[key_vk(VK_RETURN, false), key_vk(VK_RETURN, true)]);
+}
+
+#[cfg(test)]
+pub(super) fn send_external_keys_for_test(keys: &[u16]) {
+    let inputs = keys
+        .iter()
+        .flat_map(|&key| {
+            [
+                key_vk_with_signature(VIRTUAL_KEY(key), false, 0),
+                key_vk_with_signature(VIRTUAL_KEY(key), true, 0),
+            ]
+        })
+        .collect::<Vec<_>>();
     send(&inputs);
 }
 
@@ -425,6 +519,23 @@ mod tests {
     const LSHIFT: u16 = VK_LSHIFT.0;
     const LALT: u16 = VK_LMENU.0;
     const LWIN: u16 = VK_LWIN.0;
+
+    #[test]
+    fn deletion_and_paste_are_one_atomic_sequence() {
+        assert_eq!(
+            atomic_paste_steps(2, &[CTRL], VK_V, &[]),
+            vec![
+                (VK_BACK.0, false),
+                (VK_BACK.0, true),
+                (VK_BACK.0, false),
+                (VK_BACK.0, true),
+                (CTRL, false),
+                (VK_V, false),
+                (VK_V, true),
+                (CTRL, true),
+            ]
+        );
+    }
 
     #[test]
     fn plain_paste_when_nothing_held() {
