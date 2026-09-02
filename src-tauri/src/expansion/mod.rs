@@ -69,6 +69,7 @@ pub enum PasteCombo {
 static INSERT_MODE: AtomicU8 = AtomicU8::new(0);
 static PASTE_COMBO: AtomicU8 = AtomicU8::new(0);
 static RESTORE_DELAY: AtomicU32 = AtomicU32::new(5_000);
+static AUTO_PASTE_WORDS: AtomicU32 = AtomicU32::new(15);
 static CANCEL_EPOCH: AtomicU64 = AtomicU64::new(0);
 static CLIPBOARD_GENERATION: AtomicU64 = AtomicU64::new(0);
 static EXPANSION_LOCK: Mutex<()> = Mutex::new(());
@@ -77,6 +78,10 @@ static RESTORE_TX: OnceLock<Option<Sender<RestoreRequest>>> = OnceLock::new();
 
 pub const RESTORE_DELAY_MIN_MS: u32 = 3_000;
 pub const RESTORE_DELAY_MAX_MS: u32 = 15_000;
+pub const AUTO_PASTE_WORDS_MIN: u32 = 1;
+pub const AUTO_PASTE_WORDS_MAX: u32 = 500;
+#[allow(dead_code)]
+pub const AUTO_PASTE_WORDS_DEFAULT: u32 = 15;
 
 /// Extra delay when restoring a clipboard that had image/file/HTML-like
 /// formats. Some apps consume paste asynchronously; restoring too early can
@@ -87,7 +92,6 @@ const LONG_TEXT_RESTORE_STEP_CHARS: usize = 500;
 const LONG_TEXT_RESTORE_STEP_MS: u32 = 1_000;
 const LONG_TEXT_RESTORE_MAX_EXTRA_MS: u32 = 3_000;
 const LONG_TEXT_RESTORE_BASE_CHARS: usize = 110;
-const AUTO_ATOMIC_MAX_CHARS: usize = 256;
 
 pub fn set_insert_mode(mode: InsertMode) {
     INSERT_MODE.store(mode as u8, Ordering::Relaxed);
@@ -122,6 +126,21 @@ pub fn set_restore_delay_ms(ms: u32) {
 
 pub fn restore_delay_ms() -> u32 {
     RESTORE_DELAY.load(Ordering::Relaxed)
+}
+
+pub fn set_auto_paste_words(words: u32) {
+    AUTO_PASTE_WORDS.store(
+        words.clamp(AUTO_PASTE_WORDS_MIN, AUTO_PASTE_WORDS_MAX),
+        Ordering::Relaxed,
+    );
+}
+
+pub fn auto_paste_words() -> u32 {
+    AUTO_PASTE_WORDS.load(Ordering::Relaxed)
+}
+
+pub fn count_words(text: &str) -> usize {
+    text.split_whitespace().count()
 }
 
 pub fn cancel_active_typeout() {
@@ -171,10 +190,13 @@ fn resolve_for_target(mode: InsertMode, text: &str, target: TargetKind) -> Mode 
     match mode {
         InsertMode::Paste => Mode::Clipboard,
         InsertMode::Type => typing_mode_for_target(target),
-        InsertMode::Auto if text.chars().count() <= AUTO_ATOMIC_MAX_CHARS => {
-            atomic_mode_for_target(target)
+        InsertMode::Auto => {
+            if count_words(text) > auto_paste_words() as usize {
+                Mode::Clipboard
+            } else {
+                typing_mode_for_target(target)
+            }
         }
-        InsertMode::Auto => Mode::Clipboard,
     }
 }
 
@@ -880,23 +902,31 @@ mod tests {
     }
 
     #[test]
-    fn auto_inserts_short_text_atomically_and_pastes_long_text() {
+    fn auto_pastes_text_over_word_threshold_and_types_short_text() {
+        set_auto_paste_words(15);
         assert_eq!(
             resolve(InsertMode::Auto, "Good morning"),
-            Mode::AtomicNative
+            Mode::Native
         );
-        assert_eq!(
-            resolve(InsertMode::Auto, &"x".repeat(AUTO_ATOMIC_MAX_CHARS + 1)),
-            Mode::Clipboard
-        );
+        let fifteen_words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen";
+        assert_eq!(resolve(InsertMode::Auto, fifteen_words), Mode::Native);
+
+        let sixteen_words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen";
+        assert_eq!(resolve(InsertMode::Auto, sixteen_words), Mode::Clipboard);
     }
 
     #[test]
-    fn auto_uses_atomic_key_replay_in_terminals() {
+    fn auto_uses_key_replay_in_terminals_for_short_text() {
+        set_auto_paste_words(15);
         let terminal = TargetKind::Terminal(PasteCombo::CtrlShiftV);
         assert_eq!(
             resolve_for_target(InsertMode::Auto, "codex --yolo", terminal),
-            Mode::AtomicKeyReplay
+            Mode::KeyReplay
+        );
+        let sixteen_words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen";
+        assert_eq!(
+            resolve_for_target(InsertMode::Auto, sixteen_words, terminal),
+            Mode::Clipboard
         );
     }
 
@@ -910,12 +940,14 @@ mod tests {
 
     #[test]
     fn codex_ui_avoids_its_ctrl_v_image_shortcut() {
+        set_auto_paste_words(15);
         let target = classify_target_parts("Codex", "Chrome_WidgetWin_1", "Codex.exe");
         assert_eq!(target, TargetKind::Codex);
+        let sixteen_words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen";
         assert_eq!(
             resolve_for_target(
                 InsertMode::Auto,
-                &"x".repeat(AUTO_ATOMIC_MAX_CHARS + 1),
+                sixteen_words,
                 target
             ),
             Mode::Clipboard
@@ -950,6 +982,7 @@ mod tests {
 
     #[test]
     fn wezterm_uses_compatible_modes_and_paste_chords() {
+        set_auto_paste_words(15);
         let target = classify_target_parts(
             "[2/2] accountmanagement",
             "org.wezfurlong.wezterm",
@@ -958,7 +991,7 @@ mod tests {
         assert_eq!(target, TargetKind::Terminal(PasteCombo::CtrlShiftV));
         assert_eq!(
             resolve_for_target(InsertMode::Auto, "short text", target),
-            Mode::AtomicKeyReplay
+            Mode::KeyReplay
         );
         assert_eq!(
             resolve_for_target(InsertMode::Type, "short text", target),
@@ -1011,12 +1044,18 @@ mod tests {
     }
 
     #[test]
-    fn normal_apps_use_atomic_auto_and_ctrl_v() {
+    fn normal_apps_use_auto_and_ctrl_v() {
+        set_auto_paste_words(15);
         let target = classify_target_parts("Notes", "Notepad", "notepad.exe");
         assert_eq!(target, TargetKind::Standard);
         assert_eq!(
             resolve_for_target(InsertMode::Auto, "Good morning", target),
-            Mode::AtomicNative
+            Mode::Native
+        );
+        let sixteen_words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen";
+        assert_eq!(
+            resolve_for_target(InsertMode::Auto, sixteen_words, target),
+            Mode::Clipboard
         );
         assert_eq!(
             effective_paste_combo(PasteCombo::CtrlV, target),

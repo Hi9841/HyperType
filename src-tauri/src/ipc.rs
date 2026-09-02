@@ -60,6 +60,7 @@ pub struct Status {
     pub wpm: u32,
     pub paste_combo: PasteCombo,
     pub restore_delay_ms: u32,
+    pub auto_paste_words: u32,
 }
 
 #[derive(Serialize)]
@@ -79,6 +80,7 @@ pub fn get_status(state: State<Arc<AppState>>) -> Status {
         wpm: expansion::wpm(),
         paste_combo: expansion::paste_combo(),
         restore_delay_ms: expansion::restore_delay_ms(),
+        auto_paste_words: expansion::auto_paste_words(),
     }
 }
 
@@ -90,6 +92,7 @@ fn persist_settings() {
         wpm: expansion::wpm(),
         paste_combo: expansion::paste_combo(),
         restore_delay_ms: expansion::restore_delay_ms(),
+        auto_paste_words: expansion::auto_paste_words(),
     };
     if let Err(e) = storage::save_settings(&storage::settings_file_path(), &settings) {
         crate::logging::error(&format!("failed to persist settings: {e}"));
@@ -117,6 +120,12 @@ pub fn set_paste_combo(combo: PasteCombo) {
 #[tauri::command]
 pub fn set_restore_delay_ms(delay_ms: u32) {
     expansion::set_restore_delay_ms(delay_ms);
+    persist_settings();
+}
+
+#[tauri::command]
+pub fn set_auto_paste_words(words: u32) {
+    expansion::set_auto_paste_words(words);
     persist_settings();
 }
 

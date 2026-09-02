@@ -31,11 +31,11 @@ import logo from "./assets/logo.png";
 
 const INSERT_MODES: InsertMode[] = ["auto", "paste", "type"];
 const INSERT_LABEL: Record<InsertMode, string> = { auto: "Auto", paste: "Paste", type: "Type" };
-const INSERT_SUB: Record<InsertMode, string> = {
-  auto: "Inserts short text atomically; pastes long text",
-  paste: "Always pastes via clipboard",
-  type: "Always types at configured WPM",
-};
+function insertSub(mode: InsertMode, words: number): string {
+  if (mode === "paste") return "Always pastes via clipboard";
+  if (mode === "type") return "Always types at configured WPM";
+  return `Types out ≤ ${words} words at set WPM; pastes longer text`;
+}
 const PASTE_COMBOS: PasteCombo[] = ["ctrl_v", "shift_insert", "ctrl_shift_v"];
 const COMBO_LABEL: Record<PasteCombo, string> = {
   ctrl_v: "Ctrl+V",
@@ -146,6 +146,7 @@ export default function App() {
   // Settings State
   const [wpmDrag, setWpmDrag] = createSignal<number | null>(null);
   const [restoreDrag, setRestoreDrag] = createSignal<number | null>(null);
+  const [autoWordsDrag, setAutoWordsDrag] = createSignal<number | null>(null);
 
   let triggerInput: HTMLInputElement | undefined;
   let expansionTextarea: HTMLTextAreaElement | undefined;
@@ -280,6 +281,19 @@ export default function App() {
     if (s) mutateStatus({ ...s, restore_delay_ms: value });
     try {
       await api.setRestoreDelay(value);
+    } catch {
+      refetchStatus();
+    }
+  }
+
+  const autoWords = () => autoWordsDrag() ?? status()?.auto_paste_words ?? 15;
+
+  async function commitAutoPasteWords(value: number) {
+    setAutoWordsDrag(null);
+    const s = status();
+    if (s) mutateStatus({ ...s, auto_paste_words: value });
+    try {
+      await api.setAutoPasteWords(value);
     } catch {
       refetchStatus();
     }
@@ -906,7 +920,7 @@ export default function App() {
               <div class="pref-row">
                 <div class="pref-info">
                   <span class="pref-title">Default Insertion Method</span>
-                  <span class="pref-desc">{INSERT_SUB[insertMode() ?? "auto"]}</span>
+                  <span class="pref-desc">{insertSub(insertMode() ?? "auto", autoWords())}</span>
                 </div>
                 <div
                   class="seg seg-mini seg-3"
@@ -930,6 +944,44 @@ export default function App() {
 
               <div class="pref-row">
                 <div class="pref-info">
+                  <span class="pref-title">Auto-Paste Word Threshold</span>
+                  <span class="pref-desc">
+                    <input
+                      class="value-edit"
+                      type="text"
+                      inputmode="numeric"
+                      value={autoWords()}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
+                      onBlur={(e) =>
+                        commitValueText(
+                          e.currentTarget,
+                          1,
+                          100,
+                          autoWords(),
+                          commitAutoPasteWords,
+                        )
+                      }
+                    />{" "}
+                    words (pastes if &gt; {autoWords()}, types if ≤ {autoWords()})
+                  </span>
+                </div>
+                <input
+                  class="slider"
+                  type="range"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={autoWords()}
+                  onInput={(e) => setAutoWordsDrag(Number(e.currentTarget.value))}
+                  onChange={(e) => commitAutoPasteWords(Number(e.currentTarget.value))}
+                />
+              </div>
+
+              <div class="pref-row">
+                <div class="pref-info">
                   <span class="pref-title">Typing Replay Speed</span>
                   <span class="pref-desc">
                     <input
@@ -938,6 +990,9 @@ export default function App() {
                       inputmode="numeric"
                       value={wpm()}
                       onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
                       onBlur={(e) =>
                         commitValueText(e.currentTarget, 100, 1500, wpm(), commitWpm)
                       }
@@ -992,6 +1047,9 @@ export default function App() {
                       inputmode="numeric"
                       value={restoreMs()}
                       onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
                       onBlur={(e) =>
                         commitValueText(
                           e.currentTarget,

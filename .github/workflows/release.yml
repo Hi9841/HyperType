@@ -82,8 +82,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "HyperType ${{ github.ref_name }}"
           releaseBody: |
-            - Fixed intermittent expansions when typing or pressing Enter immediately after a trigger.
-            - Completed the in-app updater restart flow.
+            - Restored WPM typing replay speed pacing with high-precision Win32 timers.
+            - Added Auto-mode word threshold (<= 15 words types out at WPM speed, > 15 words pastes via clipboard).
+            - Embedded frontend assets directly via custom protocol to eliminate localhost connection errors.
+            - Enhanced settings modal with live word threshold controls and instant Enter key submission.
           releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true

@@ -151,14 +151,13 @@ fn with_modifiers_lifted<T>(work: impl FnOnce() -> T) -> T {
     result
 }
 
-// Paced Type mode stops when the user types again or focus changes.
-fn typeout_cancelled(token: u64, foreground: isize, focus: isize) -> bool {
+// Paced Type mode stops when the user types again, clicks mouse, or foreground window changes.
+fn typeout_cancelled(token: u64, foreground: isize) -> bool {
     super::cancel_epoch() != token
         || crate::platform::foreground_window() != foreground
-        || crate::platform::focused_control() != focus
 }
 
-fn type_units_cancellable(text: &str, token: u64, foreground: isize, focus: isize) -> bool {
+fn type_units_cancellable(text: &str, token: u64, foreground: isize) -> bool {
     use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 
     let delay = super::char_delay();
@@ -166,12 +165,25 @@ fn type_units_cancellable(text: &str, token: u64, foreground: isize, focus: isiz
         timeBeginPeriod(1);
     }
     let mut completed = true;
-    for unit in text.encode_utf16() {
-        if typeout_cancelled(token, foreground, focus) {
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' && chars.peek() == Some(&'\n') {
+            chars.next();
+        }
+        if typeout_cancelled(token, foreground) {
             completed = false;
             break;
         }
-        send(&[key_unicode(unit, false), key_unicode(unit, true)]);
+        if ch == '\r' || ch == '\n' {
+            send(&[key_vk(VK_RETURN, false), key_vk(VK_RETURN, true)]);
+        } else if ch == '\t' {
+            send(&[key_vk(VK_TAB, false), key_vk(VK_TAB, true)]);
+        } else {
+            let mut units = [0_u16; 2];
+            for &unit in ch.encode_utf16(&mut units).iter() {
+                send(&[key_unicode(unit, false), key_unicode(unit, true)]);
+            }
+        }
         std::thread::sleep(delay);
     }
     unsafe {
@@ -226,7 +238,7 @@ fn character_steps(vk: u16, modifiers: u8) -> Vec<(u16, bool)> {
     steps
 }
 
-fn type_virtual_keys_cancellable(text: &str, token: u64, foreground: isize, focus: isize) -> bool {
+fn type_virtual_keys_cancellable(text: &str, token: u64, foreground: isize) -> bool {
     use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 
     let delay = super::char_delay();
@@ -240,7 +252,7 @@ fn type_virtual_keys_cancellable(text: &str, token: u64, foreground: isize, focu
         if ch == '\r' && chars.peek() == Some(&'\n') {
             chars.next();
         }
-        if typeout_cancelled(token, foreground, focus) {
+        if typeout_cancelled(token, foreground) {
             completed = false;
             break;
         }
@@ -274,10 +286,9 @@ fn type_virtual_keys_cancellable(text: &str, token: u64, foreground: isize, focu
 pub fn replace_with_unicode(trigger_char_len: usize, text: &str) {
     let token = super::cancel_epoch();
     let foreground = crate::platform::foreground_window();
-    let focus = crate::platform::focused_control();
     let completed = with_modifiers_lifted(|| {
         backspaces(trigger_char_len);
-        type_units_cancellable(text, token, foreground, focus)
+        type_units_cancellable(text, token, foreground)
     });
     if !completed {
         crate::logging::info("type-out expansion cancelled");
@@ -291,10 +302,9 @@ pub fn replace_with_unicode(trigger_char_len: usize, text: &str) {
 pub fn replace_with_virtual_keys(trigger_char_len: usize, text: &str) {
     let token = super::cancel_epoch();
     let foreground = crate::platform::foreground_window();
-    let focus = crate::platform::focused_control();
     let completed = with_modifiers_lifted(|| {
         backspaces(trigger_char_len);
-        type_virtual_keys_cancellable(text, token, foreground, focus)
+        type_virtual_keys_cancellable(text, token, foreground)
     });
     if !completed {
         crate::logging::info("terminal key-replay expansion cancelled");

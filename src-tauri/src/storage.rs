@@ -40,7 +40,7 @@ pub fn settings_file_path() -> PathBuf {
     data_dir().join("settings.json")
 }
 
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AppSettings {
     /// How expansions are inserted (auto / paste / type).
     pub insert_mode: InsertMode,
@@ -50,6 +50,9 @@ pub struct AppSettings {
     pub paste_combo: PasteCombo,
     /// How long the paste may take before the saved clipboard is restored.
     pub restore_delay_ms: u32,
+    /// In Auto mode, expansions with more words than this threshold will paste;
+    /// expansions with this many words or fewer will type out at configured WPM.
+    pub auto_paste_words: u32,
 }
 
 impl Default for AppSettings {
@@ -59,6 +62,7 @@ impl Default for AppSettings {
             wpm: 600,
             paste_combo: PasteCombo::default(),
             restore_delay_ms: 5_000,
+            auto_paste_words: 15,
         }
     }
 }
@@ -75,6 +79,7 @@ struct StoredSettings {
     wpm: Option<u32>,
     paste_combo: Option<serde_json::Value>,
     restore_delay_ms: Option<u32>,
+    auto_paste_words: Option<u32>,
 }
 
 /// Load settings; a missing or unreadable file means the defaults. A legacy
@@ -104,6 +109,7 @@ pub fn load_settings(path: &Path) -> AppSettings {
             .and_then(|v| serde_json::from_value::<PasteCombo>(v).ok())
             .unwrap_or(defaults.paste_combo),
         restore_delay_ms: stored.restore_delay_ms.unwrap_or(defaults.restore_delay_ms),
+        auto_paste_words: stored.auto_paste_words.unwrap_or(defaults.auto_paste_words),
     }
 }
 
@@ -284,6 +290,7 @@ mod tests {
         assert_eq!(s.wpm, 900);
         assert_eq!(s.paste_combo, PasteCombo::CtrlV);
         assert_eq!(s.restore_delay_ms, 5_000);
+        assert_eq!(s.auto_paste_words, 15);
         fs::remove_file(&path).ok();
     }
 
@@ -291,7 +298,9 @@ mod tests {
     fn settings_migrate_legacy_type_out_false() {
         let path = temp_path("settings_legacy_false");
         fs::write(&path, r#"{"type_out": false, "wpm": 600}"#).unwrap();
-        assert_eq!(load_settings(&path).insert_mode, InsertMode::Paste);
+        let s = load_settings(&path);
+        assert_eq!(s.insert_mode, InsertMode::Paste);
+        assert_eq!(s.auto_paste_words, 15);
         fs::remove_file(&path).ok();
     }
 
@@ -301,6 +310,7 @@ mod tests {
         assert_eq!(s.insert_mode, InsertMode::Auto);
         assert_eq!(s.wpm, 600);
         assert_eq!(s.restore_delay_ms, 5_000);
+        assert_eq!(s.auto_paste_words, 15);
     }
 
     #[test]
@@ -310,6 +320,7 @@ mod tests {
         let s = load_settings(&path);
         assert_eq!(s.insert_mode, InsertMode::Auto);
         assert_eq!(s.wpm, 1200);
+        assert_eq!(s.auto_paste_words, 15);
         fs::remove_file(&path).ok();
     }
 
@@ -321,6 +332,7 @@ mod tests {
             wpm: 700,
             paste_combo: PasteCombo::ShiftInsert,
             restore_delay_ms: 400,
+            auto_paste_words: 25,
         };
         save_settings(&path, &out).unwrap();
         let s = load_settings(&path);
@@ -328,6 +340,7 @@ mod tests {
         assert_eq!(s.wpm, 700);
         assert_eq!(s.paste_combo, PasteCombo::ShiftInsert);
         assert_eq!(s.restore_delay_ms, 400);
+        assert_eq!(s.auto_paste_words, 25);
         fs::remove_file(&path).ok();
     }
 

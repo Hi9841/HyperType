@@ -35,6 +35,7 @@ export interface Status {
   wpm: number;
   paste_combo: PasteCombo;
   restore_delay_ms: number;
+  auto_paste_words: number;
 }
 
 export interface ImportSummary {
@@ -61,6 +62,7 @@ interface Api {
   setWpm: (wpm: number) => Promise<void>;
   setPasteCombo: (combo: PasteCombo) => Promise<void>;
   setRestoreDelay: (delayMs: number) => Promise<void>;
+  setAutoPasteWords: (words: number) => Promise<void>;
   getAutostart: () => Promise<boolean>;
   setAutostart: (on: boolean) => Promise<void>;
   quit: () => Promise<void>;
@@ -104,6 +106,7 @@ const tauriApi: Api = {
   setWpm: (wpm) => invoke<void>("set_wpm", { wpm }),
   setPasteCombo: (combo) => invoke<void>("set_paste_combo", { combo }),
   setRestoreDelay: (delayMs) => invoke<void>("set_restore_delay_ms", { delayMs }),
+  setAutoPasteWords: (words) => invoke<void>("set_auto_paste_words", { words }),
   getAutostart: () => isEnabled(),
   setAutostart: (on) => (on ? enable() : disable()),
   quit: () => invoke<void>("quit_app"),
@@ -119,6 +122,7 @@ function browserMock(): Api {
   let wpm = 600;
   let pasteCombo: PasteCombo = "ctrl_v";
   let restoreDelayMs = 5000;
+  let autoPasteWords = 15;
   const store = new Map<string, { expansion: string; kind: TriggerKind }>([
     ["gm", { expansion: "Good morning", kind: "text" }],
     ["addr", { expansion: "123 Main Street, Springfield", kind: "text" }],
@@ -135,6 +139,7 @@ function browserMock(): Api {
       wpm,
       paste_combo: pasteCombo,
       restore_delay_ms: restoreDelayMs,
+      auto_paste_words: autoPasteWords,
     }),
     getSnippets: async () =>
       [...store.entries()].map(([trigger, entry]) => ({ trigger, ...entry })),
@@ -238,6 +243,9 @@ function browserMock(): Api {
     },
     setRestoreDelay: async (delayMs) => {
       restoreDelayMs = Math.min(15000, Math.max(3000, delayMs));
+    },
+    setAutoPasteWords: async (words) => {
+      autoPasteWords = Math.min(500, Math.max(1, words));
     },
     getAutostart: async () => autostart,
     setAutostart: async (on) => {
