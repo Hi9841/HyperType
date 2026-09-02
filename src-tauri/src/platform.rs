@@ -98,6 +98,7 @@ pub fn foreground_context() -> ForegroundContext {
 /// Raw handle of the focused child/control in the foreground GUI thread.
 /// Best-effort: browser engines often expose a single renderer HWND, but
 /// native controls and many desktop apps change this as the user tabs/clicks.
+#[allow(dead_code)]
 pub fn focused_control() -> isize {
     unsafe {
         let fg = GetForegroundWindow();

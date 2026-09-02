@@ -154,6 +154,23 @@ pub fn wait_until_ready(timeout: Duration) -> bool {
     HOOK_READY.load(Ordering::Acquire)
 }
 
+unsafe extern "system" fn low_level_mouse_proc(
+    code: i32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        let message = wparam.0 as u32;
+        if matches!(
+            message,
+            WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN
+        ) {
+            crate::expansion::cancel_active_typeout();
+        }
+    }
+    CallNextHookEx(HHOOK::default(), code, wparam, lparam)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,21 +190,4 @@ mod tests {
         assert!(progress.wait_for(7, Duration::from_millis(100)));
         assert!(started.elapsed() >= Duration::from_millis(5));
     }
-}
-
-unsafe extern "system" fn low_level_mouse_proc(
-    code: i32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    if code == HC_ACTION as i32 {
-        let message = wparam.0 as u32;
-        if matches!(
-            message,
-            WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN
-        ) {
-            crate::expansion::cancel_active_typeout();
-        }
-    }
-    CallNextHookEx(HHOOK::default(), code, wparam, lparam)
 }

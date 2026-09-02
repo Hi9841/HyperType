@@ -131,6 +131,7 @@ fn main() {
     expansion::set_wpm(settings.wpm);
     expansion::set_paste_combo(settings.paste_combo);
     expansion::set_restore_delay_ms(settings.restore_delay_ms);
+    expansion::set_auto_paste_words(settings.auto_paste_words);
     let state = Arc::new(AppState {
         snippets: RwLock::new(snippets),
         enabled: AtomicBool::new(true),
@@ -172,6 +173,7 @@ fn main() {
             ipc::set_wpm,
             ipc::set_paste_combo,
             ipc::set_restore_delay_ms,
+            ipc::set_auto_paste_words,
             ipc::quit_app
         ])
         .setup(move |app| {
