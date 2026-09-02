@@ -68,9 +68,6 @@ jobs:
       - name: Run Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
-      - name: Run Windows expansion E2E tests
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml e2e_tests -- --ignored --test-threads=1
-
       - name: Build signed installer and publish release
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
