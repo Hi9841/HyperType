@@ -50,7 +50,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJFQzFGRTUxNTk1NERFOUQKUldTZDNsUlpVZjdCdm5oVEozOFA0emFKbVFMcURLaHpQTGYya00wTFBJMzdEL0Zpb3diZy9tRTAK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxOUREQzQ1ODA1MDVCNApSV1MwQlFWWXhOMFpBd2dydTZQbXhlTXJmak9BanYxWnMxNXJiT1Q2VjRKSkVZWTh0cDF3RDltbAo=",
       "endpoints": [
         "https://github.com/Hi9841/HyperType/releases/latest/download/latest.json"
       ],
