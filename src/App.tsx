@@ -1137,7 +1137,7 @@ export default function App() {
 
             <div class="settings-modal-footer">
               <div class="footer-version-group">
-                <span class="app-version-tag">HyperType v{status()?.version ?? "1.1.3"}</span>
+                <span class="app-version-tag">HyperType v{status()?.version ?? "1.1.4"}</span>
                 <Show when={!updateInfo()}>
                   <button
                     type="button"

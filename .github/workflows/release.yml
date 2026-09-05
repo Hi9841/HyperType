@@ -85,10 +85,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "HyperType ${{ github.ref_name }}"
           releaseBody: |
-            - Restored WPM typing replay speed pacing with high-precision Win32 timers.
-            - Added Auto-mode word threshold (<= 15 words types out at WPM speed, > 15 words pastes via clipboard).
-            - Embedded frontend assets directly via custom protocol to eliminate localhost connection errors.
-            - Enhanced settings modal with live word threshold controls and instant Enter key submission.
+            - Zero-blocking low-level keyboard hook callback (< 5µs) preventing Windows LowLevelHooksTimeout drops.
+            - Automatic watchdog supervisor running every 2.5s to detect and self-heal keyboard hook health.
+            - Live Hook Health telemetry and manual "Repair Hook" button in Settings.
+            - Synchronous FIFO keystroke event queue ensuring reliable, consistent text expansion.
           releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true
