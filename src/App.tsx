@@ -147,6 +147,25 @@ export default function App() {
   const [wpmDrag, setWpmDrag] = createSignal<number | null>(null);
   const [restoreDrag, setRestoreDrag] = createSignal<number | null>(null);
   const [autoWordsDrag, setAutoWordsDrag] = createSignal<number | null>(null);
+  const [repairingHook, setRepairingHook] = createSignal(false);
+  const [hookMessage, setHookMessage] = createSignal("");
+
+  async function handleRepairHook() {
+    if (repairingHook()) return;
+    setRepairingHook(true);
+    setHookMessage("Reinstalling hook...");
+    try {
+      await api.reinstallHook();
+      await refetchStatus();
+      setHookMessage("Hook active & reconnected!");
+      setTimeout(() => setHookMessage(""), 3500);
+    } catch {
+      setHookMessage("Failed to reinstall hook");
+      setTimeout(() => setHookMessage(""), 3500);
+    } finally {
+      setRepairingHook(false);
+    }
+  }
 
   let triggerInput: HTMLInputElement | undefined;
   let expansionTextarea: HTMLTextAreaElement | undefined;
@@ -159,6 +178,15 @@ export default function App() {
       if (s) mutateStatus({ ...s, enabled });
     });
     onCleanup(() => unlisten.then((f) => f()));
+
+    // Keep hook event counter fresh when Settings modal is open
+    const interval = setInterval(() => {
+      if (showSettings()) {
+        refetchStatus();
+      }
+    }, 1500);
+    onCleanup(() => clearInterval(interval));
+
     checkForUpdate(false);
   });
 
@@ -1074,11 +1102,42 @@ export default function App() {
                   onChange={(e) => commitRestoreDelay(Number(e.currentTarget.value))}
                 />
               </div>
+
+              <div class="pref-row">
+                <div class="pref-info">
+                  <span class="pref-title">Keyboard Capture & Hook Health</span>
+                  <span class="pref-desc">
+                    <span
+                      class="hook-status-badge"
+                      classList={{
+                        "hook-active": !!status()?.hook_active,
+                        "hook-inactive": !status()?.hook_active,
+                      }}
+                    >
+                      <span class="hook-dot" />
+                      {status()?.hook_active ? "Active" : "Detached"}
+                    </span>
+                    {" · "}
+                    {(status()?.hook_events ?? 0).toLocaleString()} events captured
+                    <Show when={hookMessage()}>
+                      <span class="hook-msg"> — {hookMessage()}</span>
+                    </Show>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="btn-repair-hook"
+                  onClick={handleRepairHook}
+                  disabled={repairingHook()}
+                >
+                  {repairingHook() ? "Repairing..." : "Repair Hook"}
+                </button>
+              </div>
             </div>
 
             <div class="settings-modal-footer">
               <div class="footer-version-group">
-                <span class="app-version-tag">HyperType v{status()?.version ?? "1.1.1"}</span>
+                <span class="app-version-tag">HyperType v{status()?.version ?? "1.1.3"}</span>
                 <Show when={!updateInfo()}>
                   <button
                     type="button"

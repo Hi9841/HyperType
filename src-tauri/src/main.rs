@@ -174,7 +174,8 @@ fn main() {
             ipc::set_paste_combo,
             ipc::set_restore_delay_ms,
             ipc::set_auto_paste_words,
-            ipc::quit_app
+            ipc::quit_app,
+            ipc::reinstall_hook
         ])
         .setup(move |app| {
             build_tray(app.handle(), setup_state.clone())?;

@@ -61,6 +61,8 @@ pub struct Status {
     pub paste_combo: PasteCombo,
     pub restore_delay_ms: u32,
     pub auto_paste_words: u32,
+    pub hook_active: bool,
+    pub hook_events: u64,
 }
 
 #[derive(Serialize)]
@@ -81,6 +83,8 @@ pub fn get_status(state: State<Arc<AppState>>) -> Status {
         paste_combo: expansion::paste_combo(),
         restore_delay_ms: expansion::restore_delay_ms(),
         auto_paste_words: expansion::auto_paste_words(),
+        hook_active: crate::keyboard::is_hook_installed(),
+        hook_events: crate::keyboard::get_event_count(),
     }
 }
 
@@ -363,6 +367,15 @@ pub fn toggle_enabled(app: AppHandle, state: State<Arc<AppState>>) -> bool {
 pub fn quit_app(app: AppHandle) {
     crate::request_quit();
     app.exit(0);
+}
+
+#[tauri::command]
+pub fn reinstall_hook() -> Result<bool, String> {
+    if crate::keyboard::reinstall_hook() {
+        Ok(true)
+    } else {
+        Err("Failed to reinstall keyboard hook".to_string())
+    }
 }
 
 fn persist(state: &Arc<AppState>) {
