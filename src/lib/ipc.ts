@@ -138,7 +138,7 @@ function browserMock(): Api {
     getStatus: async () => ({
       enabled,
       count: store.size,
-      version: "1.1.3",
+      version: "1.1.4",
       insert_mode: insertMode,
       wpm,
       paste_combo: pasteCombo,
