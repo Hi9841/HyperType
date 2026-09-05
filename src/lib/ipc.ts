@@ -38,6 +38,8 @@ export interface Status {
   auto_paste_words: number;
   hook_active: boolean;
   hook_events: number;
+  hook_healthy: boolean;
+  is_elevated: boolean;
 }
 
 export interface ImportSummary {
@@ -68,6 +70,7 @@ interface Api {
   getAutostart: () => Promise<boolean>;
   setAutostart: (on: boolean) => Promise<void>;
   reinstallHook: () => Promise<boolean>;
+  restartElevated: () => Promise<void>;
   quit: () => Promise<void>;
 }
 
@@ -113,6 +116,7 @@ const tauriApi: Api = {
   getAutostart: () => isEnabled(),
   setAutostart: (on) => (on ? enable() : disable()),
   reinstallHook: () => invoke<boolean>("reinstall_hook"),
+  restartElevated: () => invoke<void>("restart_elevated"),
   quit: () => invoke<void>("quit_app"),
 };
 
@@ -138,7 +142,7 @@ function browserMock(): Api {
     getStatus: async () => ({
       enabled,
       count: store.size,
-      version: "1.1.4",
+      version: "1.1.5",
       insert_mode: insertMode,
       wpm,
       paste_combo: pasteCombo,
@@ -146,6 +150,8 @@ function browserMock(): Api {
       auto_paste_words: autoPasteWords,
       hook_active: true,
       hook_events: 42,
+      hook_healthy: true,
+      is_elevated: false,
     }),
     getSnippets: async () =>
       [...store.entries()].map(([trigger, entry]) => ({ trigger, ...entry })),
@@ -258,6 +264,7 @@ function browserMock(): Api {
       autostart = on;
     },
     reinstallHook: async () => true,
+    restartElevated: async () => {},
     quit: async () => {},
   };
 }

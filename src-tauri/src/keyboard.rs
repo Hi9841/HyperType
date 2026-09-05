@@ -19,10 +19,13 @@ use std::sync::{Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use windows::Win32::Foundation::{CloseHandle, HINSTANCE, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, HINSTANCE, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{
     GetCurrentThreadId, GetExitCodeThread, OpenThread, THREAD_QUERY_LIMITED_INFORMATION,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
@@ -44,6 +47,8 @@ static HOOK_READY: AtomicBool = AtomicBool::new(false);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 static HOOK_EVENTS: AtomicU64 = AtomicU64::new(0);
 static LAST_EVENT_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_HEARTBEAT_PING_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_HEARTBEAT_PONG_MS: AtomicU64 = AtomicU64::new(0);
 static REINSTALL_LOCK: Mutex<()> = Mutex::new(());
 
 /// True when the low-level hook thread is actively installed and running.
@@ -160,8 +165,63 @@ fn spawn_hook_thread() {
     });
 }
 
+/// Synthesizes a benign, non-printable key release (VK_F24 KEYUP) tagged with
+/// HEARTBEAT_SIGNATURE to verify that Windows is still dispatching events to our hook.
+pub fn send_heartbeat_ping() -> bool {
+    unsafe {
+        let input = INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(crate::consts::VK_F24 as u16),
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: crate::consts::HEARTBEAT_SIGNATURE,
+                },
+            },
+        };
+        let sent = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        if sent != 1 {
+            let err = GetLastError();
+            // If SendInput failed with ERROR_ACCESS_DENIED (5), the active window is
+            // elevated under UIPI, so synthetic input cannot be injected right now.
+            // This does NOT mean the hook is dead.
+            if err != windows::Win32::Foundation::WIN32_ERROR(5) {
+                crate::logging::error(&format!(
+                    "send_heartbeat_ping SendInput returned {sent}, GetLastError={err:?}"
+                ));
+            }
+            return false;
+        }
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        LAST_HEARTBEAT_PING_MS.store(now_ms, Ordering::SeqCst);
+        true
+    }
+}
+
+/// Returns true if the hook heartbeat has been confirmed responsive recently.
+pub fn is_heartbeat_healthy() -> bool {
+    let ping = LAST_HEARTBEAT_PING_MS.load(Ordering::SeqCst);
+    let pong = LAST_HEARTBEAT_PONG_MS.load(Ordering::SeqCst);
+    if ping == 0 {
+        return true;
+    }
+    pong >= ping
+        || SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+            .saturating_sub(pong)
+            < 3500
+}
+
 /// Background watchdog that checks hook thread health every 2.5 seconds.
-/// If the thread terminated or becomes invalid, automatically recovers.
+/// Sends a synthetic heartbeat ping to prove Windows is actively delivering events.
+/// If the thread dies or Windows silently evicts the hook, automatically reinstalls it.
 pub fn start_watchdog() {
     thread::spawn(|| loop {
         thread::sleep(Duration::from_millis(2500));
@@ -186,9 +246,47 @@ pub fn start_watchdog() {
             }
         }
 
+        // Active Heartbeat Check:
+        // Detect if Windows silently dropped the hook or another app broke the chain
+        if !needs_healing && ready {
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let last_ping = LAST_HEARTBEAT_PING_MS.load(Ordering::SeqCst);
+            let last_pong = LAST_HEARTBEAT_PONG_MS.load(Ordering::SeqCst);
+            let last_event = LAST_EVENT_MS.load(Ordering::Relaxed);
+
+            // If real user typing events arrived within the last 5 seconds,
+            // the hook is proven healthy and active.
+            let recently_active = last_event > 0 && now_ms.saturating_sub(last_event) < 5000;
+
+            if !recently_active && last_ping > 0 && last_pong < last_ping {
+                let elapsed = now_ms.saturating_sub(last_ping);
+                if elapsed > 2000 {
+                    crate::logging::error(&format!(
+                        "watchdog detected dead hook chain (ping={last_ping}, pong={last_pong}, elapsed={elapsed}ms) - triggering self-healing reinstallation..."
+                    ));
+                    needs_healing = true;
+                }
+            }
+        }
+
         if needs_healing {
             crate::logging::error("watchdog triggering self-healing keyboard hook reinstallation...");
+            LAST_HEARTBEAT_PING_MS.store(0, Ordering::SeqCst);
+            LAST_HEARTBEAT_PONG_MS.store(0, Ordering::SeqCst);
             reinstall_hook();
+        } else if ready {
+            // Hook is healthy. Only send a synthetic ping if the user is idle (> 2s)
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let last_event = LAST_EVENT_MS.load(Ordering::Relaxed);
+            if last_event == 0 || now_ms.saturating_sub(last_event) > 2000 {
+                send_heartbeat_ping();
+            }
         }
     });
 }
@@ -198,6 +296,18 @@ pub fn start_watchdog() {
 unsafe extern "system" fn low_level_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code == HC_ACTION as i32 {
         let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+
+        // Check for watchdog heartbeat ping
+        if kb.vkCode == crate::consts::VK_F24 || kb.dwExtraInfo == crate::consts::HEARTBEAT_SIGNATURE {
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            LAST_HEARTBEAT_PONG_MS.store(now_ms, Ordering::SeqCst);
+            // Consume the heartbeat event immediately so target apps never see it
+            return LRESULT(1);
+        }
+
         // Ignore synthetic events generated by HyperType itself
         let ours = kb.dwExtraInfo == crate::consts::INJECT_SIGNATURE;
         if !ours {
@@ -236,7 +346,8 @@ unsafe extern "system" fn low_level_mouse_proc(
 ) -> LRESULT {
     if code == HC_ACTION as i32 {
         let ms = &*(lparam.0 as *const MSLLHOOKSTRUCT);
-        let ours = ms.dwExtraInfo == crate::consts::INJECT_SIGNATURE;
+        let ours = ms.dwExtraInfo == crate::consts::INJECT_SIGNATURE
+            || ms.dwExtraInfo == crate::consts::HEARTBEAT_SIGNATURE;
         if !ours {
             let message = wparam.0 as u32;
             if matches!(

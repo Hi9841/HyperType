@@ -63,6 +63,8 @@ pub struct Status {
     pub auto_paste_words: u32,
     pub hook_active: bool,
     pub hook_events: u64,
+    pub hook_healthy: bool,
+    pub is_elevated: bool,
 }
 
 #[derive(Serialize)]
@@ -85,7 +87,14 @@ pub fn get_status(state: State<Arc<AppState>>) -> Status {
         auto_paste_words: expansion::auto_paste_words(),
         hook_active: crate::keyboard::is_hook_installed(),
         hook_events: crate::keyboard::get_event_count(),
+        hook_healthy: crate::keyboard::is_heartbeat_healthy(),
+        is_elevated: crate::platform::is_elevated(),
     }
+}
+
+#[tauri::command]
+pub fn restart_elevated() -> Result<(), String> {
+    crate::platform::restart_elevated()
 }
 
 /// Settings live as expansion-module atomics; persistence just reads them

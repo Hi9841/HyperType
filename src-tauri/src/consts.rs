@@ -7,6 +7,14 @@
 /// "HTYP" in ASCII.
 pub const INJECT_SIGNATURE: usize = 0x4854_5950;
 
+/// Stamp placed in `dwExtraInfo` for hook health watchdog heartbeat pings.
+/// "HTHB" in ASCII.
+pub const HEARTBEAT_SIGNATURE: usize = 0x4854_4842;
+
+/// Virtual key used exclusively for watchdog heartbeat pings.
+/// VK_F24 (0x87) is a reserved function key not present on standard keyboards.
+pub const VK_F24: u32 = 0x87;
+
 pub const VK_BACK: u32 = 0x08;
 pub const VK_TAB: u32 = 0x09;
 pub const VK_RETURN: u32 = 0x0D;

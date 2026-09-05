@@ -26,6 +26,12 @@ fn debug_enabled() -> bool {
 
 fn write_line(level: &str, msg: &str) {
     if let Some(path) = LOG_PATH.get() {
+        if let Ok(meta) = std::fs::metadata(path) {
+            // Rotate/truncate if log exceeds 1 MB
+            if meta.len() > 1_048_576 {
+                let _ = std::fs::write(path, b"");
+            }
+        }
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
             let ts = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -37,8 +43,8 @@ fn write_line(level: &str, msg: &str) {
 }
 
 pub fn info(msg: &str) {
+    write_line("INFO", msg);
     if debug_enabled() {
-        write_line("INFO", msg);
         eprintln!("[INFO] {msg}");
     }
 }
