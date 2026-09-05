@@ -148,6 +148,7 @@ export default function App() {
   const [restoreDrag, setRestoreDrag] = createSignal<number | null>(null);
   const [autoWordsDrag, setAutoWordsDrag] = createSignal<number | null>(null);
   const [repairingHook, setRepairingHook] = createSignal(false);
+  const [elevating, setElevating] = createSignal(false);
   const [hookMessage, setHookMessage] = createSignal("");
 
   async function handleRepairHook() {
@@ -164,6 +165,19 @@ export default function App() {
       setTimeout(() => setHookMessage(""), 3500);
     } finally {
       setRepairingHook(false);
+    }
+  }
+
+  async function handleRestartElevated() {
+    if (elevating()) return;
+    setElevating(true);
+    setHookMessage("Requesting administrator privileges...");
+    try {
+      await api.restartElevated();
+    } catch (e) {
+      setHookMessage(String(e));
+      setTimeout(() => setHookMessage(""), 3500);
+      setElevating(false);
     }
   }
 
@@ -1110,12 +1124,12 @@ export default function App() {
                     <span
                       class="hook-status-badge"
                       classList={{
-                        "hook-active": !!status()?.hook_active,
+                        "hook-active": !!status()?.hook_active && !!status()?.hook_healthy,
                         "hook-inactive": !status()?.hook_active,
                       }}
                     >
                       <span class="hook-dot" />
-                      {status()?.hook_active ? "Active" : "Detached"}
+                      {status()?.hook_active ? (status()?.hook_healthy ? "Active & Healthy" : "Active (Verifying)") : "Detached"}
                     </span>
                     {" · "}
                     {(status()?.hook_events ?? 0).toLocaleString()} events captured
@@ -1132,6 +1146,38 @@ export default function App() {
                 >
                   {repairingHook() ? "Repairing..." : "Repair Hook"}
                 </button>
+              </div>
+
+              <div class="pref-row">
+                <div class="pref-info">
+                  <span class="pref-title">Process Privilege (UIPI Status)</span>
+                  <span class="pref-desc">
+                    <span
+                      class="hook-status-badge"
+                      classList={{
+                        "hook-active": !!status()?.is_elevated,
+                        "hook-inactive": !status()?.is_elevated,
+                      }}
+                    >
+                      <span class="hook-dot" />
+                      {status()?.is_elevated ? "Administrator (Elevated)" : "Standard User"}
+                    </span>
+                    {" · "}
+                    {status()?.is_elevated
+                      ? "Can inject into elevated terminals (WezTerm, CMD, PowerShell)"
+                      : "Cannot type into administrator terminals without elevation"}
+                  </span>
+                </div>
+                <Show when={!status()?.is_elevated}>
+                  <button
+                    type="button"
+                    class="btn-repair-hook"
+                    onClick={handleRestartElevated}
+                    disabled={elevating()}
+                  >
+                    {elevating() ? "Elevating..." : "Run as Admin"}
+                  </button>
+                </Show>
               </div>
             </div>
 

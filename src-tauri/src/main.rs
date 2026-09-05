@@ -123,6 +123,17 @@ fn build_tray(app: &AppHandle, state: Arc<AppState>) -> tauri::Result<()> {
 
 fn main() {
     logging::init();
+    std::panic::set_hook(Box::new(|info| {
+        let location = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown".to_string()
+        };
+        crate::logging::error(&format!("PANIC at {location}: {payload}"));
+    }));
 
     let data_path = storage::data_file_path();
     let snippets = storage::load_or_default(&data_path);
@@ -148,6 +159,7 @@ fn main() {
     tauri::Builder::default()
         // single-instance must be registered first.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            crate::logging::info("single-instance triggered: focus requested from second process");
             open_main_window(app);
         }))
         .plugin(tauri_plugin_autostart::init(
@@ -175,10 +187,13 @@ fn main() {
             ipc::set_restore_delay_ms,
             ipc::set_auto_paste_words,
             ipc::quit_app,
-            ipc::reinstall_hook
+            ipc::reinstall_hook,
+            ipc::restart_elevated
         ])
         .setup(move |app| {
+            crate::logging::info("Tauri setup callback invoked");
             build_tray(app.handle(), setup_state.clone())?;
+            crate::logging::info("Tray built successfully");
             // Registering shortcuts marshals each Win32 RegisterHotKey call
             // onto the main thread and blocks waiting for it to run. The
             // event loop isn't pumping yet during `setup`, so doing this
@@ -198,13 +213,29 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("failed to build HyperType")
-        .run(|_app, event| {
-            if let RunEvent::ExitRequested { api, .. } = event {
+        .run(|_app, event| match event {
+            RunEvent::ExitRequested { api, .. } => {
+                crate::logging::info("RunEvent::ExitRequested received");
                 // Keep running in the tray when the last window closes, unless
                 // the user actually chose Quit.
                 if !QUIT.load(Ordering::SeqCst) {
                     api.prevent_exit();
+                    crate::logging::info("prevented exit, running in tray");
                 }
             }
+            RunEvent::Exit => {
+                crate::logging::info("RunEvent::Exit received");
+            }
+            RunEvent::Ready => {
+                crate::logging::info("RunEvent::Ready received");
+            }
+            RunEvent::Resumed => {
+                crate::logging::info("RunEvent::Resumed received");
+            }
+            RunEvent::WindowEvent { label, event, .. } => {
+                crate::logging::info(&format!("RunEvent::WindowEvent [{label}]: {event:?}"));
+            }
+            _ => {}
         });
+    crate::logging::info("main() exited");
 }

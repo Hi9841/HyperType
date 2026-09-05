@@ -8,13 +8,18 @@ use std::path::Path;
 
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND};
+use windows::Win32::Security::{
+    GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+};
 use windows::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
+    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardLayout, ToUnicodeEx, HKL};
+use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetForegroundWindow, GetGUIThreadInfo, GetWindowLongPtrW, GetWindowTextW,
-    GetWindowThreadProcessId, GUITHREADINFO, GWL_STYLE,
+    GetWindowThreadProcessId, GUITHREADINFO, GWL_STYLE, SW_SHOW,
 };
 
 /// Edit-control style bit. Defined locally to avoid depending on whether the
@@ -164,6 +169,56 @@ pub fn is_password_field() -> bool {
             }
         }
         false
+    }
+}
+
+/// Returns true if the current process is running with elevated privileges (Administrator).
+pub fn is_elevated() -> bool {
+    unsafe {
+        let mut token = windows::Win32::Foundation::HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
+            return false;
+        }
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut return_len = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            Some(&mut elevation as *mut _ as *mut _),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut return_len,
+        );
+        let _ = CloseHandle(token);
+        ok.is_ok() && elevation.TokenIsElevated != 0
+    }
+}
+
+/// Relaunches the HyperType executable with administrator privileges (UAC prompt)
+/// and terminates the current process.
+pub fn restart_elevated() -> Result<(), String> {
+    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_path_wide: Vec<u16> = current_exe
+        .to_str()
+        .ok_or_else(|| "invalid exe path".to_string())?
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let res = ShellExecuteW(
+            HWND::default(),
+            windows::core::w!("runas"),
+            windows::core::PCWSTR(exe_path_wide.as_ptr()),
+            windows::core::PCWSTR::null(),
+            windows::core::PCWSTR::null(),
+            SW_SHOW,
+        );
+        // ShellExecute returns an HINSTANCE > 32 on success
+        if (res.0 as usize) > 32 {
+            std::process::exit(0);
+        } else {
+            Err(format!("ShellExecute runas failed with code {}", res.0 as usize))
+        }
     }
 }
 

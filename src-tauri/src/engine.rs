@@ -137,6 +137,13 @@ impl Engine {
             | self.keystate[consts::VK_RWIN as usize])
             & 0x80
             != 0;
+        let shift = self.keystate[consts::VK_SHIFT as usize] & 0x80 != 0;
+
+        if crate::shortcuts::try_match_chord_fallback(ev.vk, ctrl, alt, shift, win, state) {
+            self.buffer.clear();
+            return;
+        }
+
         if (ctrl && !alt) || win {
             self.buffer.clear();
             return;
