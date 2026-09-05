@@ -36,6 +36,8 @@ export interface Status {
   paste_combo: PasteCombo;
   restore_delay_ms: number;
   auto_paste_words: number;
+  hook_active: boolean;
+  hook_events: number;
 }
 
 export interface ImportSummary {
@@ -65,6 +67,7 @@ interface Api {
   setAutoPasteWords: (words: number) => Promise<void>;
   getAutostart: () => Promise<boolean>;
   setAutostart: (on: boolean) => Promise<void>;
+  reinstallHook: () => Promise<boolean>;
   quit: () => Promise<void>;
 }
 
@@ -109,6 +112,7 @@ const tauriApi: Api = {
   setAutoPasteWords: (words) => invoke<void>("set_auto_paste_words", { words }),
   getAutostart: () => isEnabled(),
   setAutostart: (on) => (on ? enable() : disable()),
+  reinstallHook: () => invoke<boolean>("reinstall_hook"),
   quit: () => invoke<void>("quit_app"),
 };
 
@@ -134,12 +138,14 @@ function browserMock(): Api {
     getStatus: async () => ({
       enabled,
       count: store.size,
-      version: "1.1.1",
+      version: "1.1.3",
       insert_mode: insertMode,
       wpm,
       paste_combo: pasteCombo,
       restore_delay_ms: restoreDelayMs,
       auto_paste_words: autoPasteWords,
+      hook_active: true,
+      hook_events: 42,
     }),
     getSnippets: async () =>
       [...store.entries()].map(([trigger, entry]) => ({ trigger, ...entry })),
@@ -251,6 +257,7 @@ function browserMock(): Api {
     setAutostart: async (on) => {
       autostart = on;
     },
+    reinstallHook: async () => true,
     quit: async () => {},
   };
 }

@@ -198,9 +198,7 @@ fn run(state: Arc<AppState>, rx: Receiver<KeyEvent>) {
     let mut engine = Engine::new();
     // recv() blocks until the hook sends; the thread sleeps otherwise (0% CPU).
     while let Ok(ev) = rx.recv() {
-        let sequence = ev.sequence;
         engine.handle(&host, &state, ev);
-        crate::keyboard::mark_processed(sequence);
     }
 }
 
@@ -285,7 +283,6 @@ mod tests {
             host,
             state,
             KeyEvent {
-                sequence: 0,
                 message: WM_KEYDOWN,
                 vk,
                 scan: 0,
