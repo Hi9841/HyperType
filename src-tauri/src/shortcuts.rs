@@ -42,6 +42,27 @@ pub fn register_all(app: &AppHandle, state: &Arc<AppState>) {
     }
 }
 
+/// Unregister every persisted Shortcut-kind hotkey. Called when the engine is
+/// paused: RegisterHotKey swallows the chord system-wide even if the handler
+/// drops it, so a paused HyperType must hand the keys back to the focused app.
+pub fn unregister_all(app: &AppHandle, state: &Arc<AppState>) {
+    let entries = state.snippets.read().unwrap().list();
+    for (trigger, _, kind) in entries {
+        if kind == TriggerKind::Shortcut {
+            unregister_one(app, &trigger);
+        }
+    }
+}
+
+/// Keep OS hotkey ownership in sync with the engine's enabled flag.
+pub fn sync_enabled(app: &AppHandle, state: &Arc<AppState>, enabled: bool) {
+    if enabled {
+        register_all(app, state);
+    } else {
+        unregister_all(app, state);
+    }
+}
+
 /// Register (or re-register) a single shortcut. Unregistering first makes
 /// this safe to call both for a brand new chord and for rebinding an
 /// existing one to new expansion text.
@@ -109,50 +130,48 @@ pub fn try_match_chord_fallback(
         return false;
     };
 
-    let entries = state.snippets.read().unwrap().list();
-    for (trigger, expansion, kind) in entries {
-        if kind != TriggerKind::Shortcut {
-            continue;
-        }
-        let trig_lower = trigger.to_lowercase().replace(' ', "");
-        let mut expected = String::new();
-        if ctrl {
-            expected.push_str("ctrl+");
-        }
-        if alt {
-            expected.push_str("alt+");
-        }
-        if shift {
-            expected.push_str("shift+");
-        }
-        if win {
-            expected.push_str("super+");
-        }
-        expected.push_str(&key_name.to_lowercase());
-
-        let matches = trig_lower == expected
-            || (trig_lower.starts_with("control+")
-                && trig_lower == expected.replace("ctrl+", "control+"));
-
-        if matches {
-            if !should_fire_shortcut() {
-                return true;
-            }
-            if !state.enabled.load(Ordering::Relaxed) {
-                return true;
-            }
-            if crate::platform::is_password_field() {
-                return true;
-            }
-            let exp = expansion.clone();
-            std::thread::spawn(move || {
-                crate::expansion::expand(0, &exp);
-                crate::logging::info("expanded shortcut trigger (hook fallback)");
-            });
-            return true;
-        }
+    let mut expected = String::new();
+    if ctrl {
+        expected.push_str("ctrl+");
     }
-    false
+    if alt {
+        expected.push_str("alt+");
+    }
+    if shift {
+        expected.push_str("shift+");
+    }
+    if win {
+        expected.push_str("super+");
+    }
+    expected.push_str(&key_name.to_lowercase());
+
+    // Indexed lookup: the previous `list()` cloned every trigger and every
+    // expansion body on each Ctrl/Alt/Win keystroke.
+    let matched = {
+        let snippets = state
+            .snippets
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        snippets.match_shortcut(&expected)
+    };
+    let Some((_trigger, expansion)) = matched else {
+        return false;
+    };
+
+    if !should_fire_shortcut() {
+        return true;
+    }
+    if !state.enabled.load(Ordering::Relaxed) {
+        return true;
+    }
+    if crate::platform::is_password_field() {
+        return true;
+    }
+    std::thread::spawn(move || {
+        crate::expansion::expand(0, &expansion);
+        crate::logging::info("expanded shortcut trigger (hook fallback)");
+    });
+    true
 }
 
 fn vk_to_key_name(vk: u32) -> Option<String> {

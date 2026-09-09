@@ -36,6 +36,10 @@ fn open() -> bool {
 /// copied files (CF_HDROP) — not just plain text.
 pub struct Snapshot {
     formats: Vec<(u32, Vec<u8>)>,
+    /// False when the clipboard could not be opened, so nothing was captured.
+    /// Such a snapshot must never be restored (that would erase the user's
+    /// clipboard) and must not be mistaken for a genuinely empty clipboard.
+    acquired: bool,
 }
 
 impl Snapshot {
@@ -43,6 +47,11 @@ impl Snapshot {
         self.formats
             .iter()
             .any(|(fmt, _)| !matches!(*fmt, CF_TEXT | CF_OEMTEXT | CF_UNICODETEXT | CF_LOCALE))
+    }
+
+    /// True only when the clipboard was successfully opened and read.
+    pub fn is_acquired(&self) -> bool {
+        self.acquired
     }
 }
 
@@ -88,7 +97,10 @@ fn is_copyable_format(fmt: u32) -> bool {
 pub fn snapshot() -> Snapshot {
     let mut formats = Vec::new();
     if !open() {
-        return Snapshot { formats };
+        return Snapshot {
+            formats,
+            acquired: false,
+        };
     }
     let mut total = 0usize;
     unsafe {
@@ -118,7 +130,10 @@ pub fn snapshot() -> Snapshot {
         }
         let _ = CloseClipboard();
     }
-    Snapshot { formats }
+    Snapshot {
+        formats,
+        acquired: true,
+    }
 }
 
 /// Retrieve current plain Unicode text from the clipboard if available.
@@ -129,10 +144,14 @@ pub fn get_unicode_text() -> Option<String> {
     unsafe {
         let text = if let Ok(handle) = GetClipboardData(CF_UNICODETEXT) {
             let hglobal = HGLOBAL(handle.0);
+            // Bound the scan by the real block size: a rogue provider can leave
+            // CF_UNICODETEXT unterminated, and scanning past the allocation
+            // would read arbitrary memory (or fault).
+            let max_units = GlobalSize(hglobal) / 2;
             let ptr = GlobalLock(hglobal) as *const u16;
-            if !ptr.is_null() {
+            if !ptr.is_null() && max_units > 0 {
                 let mut len = 0;
-                while *ptr.add(len) != 0 {
+                while len < max_units && *ptr.add(len) != 0 {
                     len += 1;
                 }
                 let slice = std::slice::from_raw_parts(ptr, len);
@@ -140,6 +159,9 @@ pub fn get_unicode_text() -> Option<String> {
                 let _ = GlobalUnlock(hglobal);
                 Some(string)
             } else {
+                if !ptr.is_null() {
+                    let _ = GlobalUnlock(hglobal);
+                }
                 None
             }
         } else {
@@ -150,9 +172,13 @@ pub fn get_unicode_text() -> Option<String> {
     }
 }
 
-/// Put a snapshot back. An empty snapshot restores an empty clipboard —
-/// never an empty *string* over whatever content remained.
+/// Put a snapshot back. A snapshot that was never acquired is left alone —
+/// restoring it would erase whatever the user currently has. An acquired but
+/// empty snapshot restores an empty clipboard, which is correct.
 pub fn restore(snapshot: &Snapshot) {
+    if !snapshot.acquired {
+        return;
+    }
     if !open() {
         return;
     }

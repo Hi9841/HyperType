@@ -47,6 +47,19 @@ pub struct Snippets {
     /// drives `list()` (the UI and the persisted file order).
     order: Vec<String>,
     suffixes: SuffixNode,
+    /// Normalized chord -> trigger. Lets the hook fallback match a shortcut in
+    /// O(1) without cloning the whole snippet list on every Ctrl/Alt/Win key.
+    shortcut_index: HashMap<String, String>,
+}
+
+/// Canonical form for shortcut chords: lowercase, no spaces, `control` folded
+/// into `ctrl`. Must stay in sync with how `shortcuts::try_match_chord_fallback`
+/// builds its expected chord.
+pub fn normalize_chord(trigger: &str) -> String {
+    trigger
+        .to_lowercase()
+        .replace(' ', "")
+        .replace("control+", "ctrl+")
 }
 
 impl Snippets {
@@ -65,6 +78,7 @@ impl Snippets {
             map,
             order,
             suffixes: SuffixNode::default(),
+            shortcut_index: HashMap::new(),
         };
         s.rebuild_suffixes();
         s
@@ -85,17 +99,20 @@ impl Snippets {
 
     fn rebuild_suffixes(&mut self) {
         let mut root = SuffixNode::default();
+        let mut shortcut_index = HashMap::new();
         for (trigger, entry) in &self.map {
-            if entry.kind != TriggerKind::Text {
-                continue;
+            if entry.kind == TriggerKind::Text {
+                let mut node = &mut root;
+                for ch in trigger.chars().rev() {
+                    node = node.children.entry(ch).or_default();
+                }
+                node.trigger = Some(trigger.clone());
+            } else {
+                shortcut_index.insert(normalize_chord(trigger), trigger.clone());
             }
-            let mut node = &mut root;
-            for ch in trigger.chars().rev() {
-                node = node.children.entry(ch).or_default();
-            }
-            node.trigger = Some(trigger.clone());
         }
         self.suffixes = root;
+        self.shortcut_index = shortcut_index;
     }
 
     fn upsert(&mut self, trigger: String, expansion: String, kind: TriggerKind) {
@@ -186,6 +203,15 @@ impl Snippets {
 
     pub fn get(&self, trigger: &str) -> Option<(String, TriggerKind)> {
         self.map.get(trigger).map(|e| (e.expansion.clone(), e.kind))
+    }
+
+    /// Match a normalized shortcut chord. Only the matched trigger and
+    /// expansion are cloned, so a chord keypress never allocates the whole
+    /// snippet library.
+    pub fn match_shortcut(&self, normalized: &str) -> Option<(String, String)> {
+        let trigger = self.shortcut_index.get(normalized)?;
+        let entry = self.map.get(trigger)?;
+        Some((trigger.clone(), entry.expansion.clone()))
     }
 
     pub fn len(&self) -> usize {
@@ -303,6 +329,22 @@ mod tests {
         ]);
         assert_eq!(triggers(&s), vec!["a", "b"]);
         assert_eq!(s.match_suffix(&buf("a")).unwrap().1, "new");
+    }
+
+    #[test]
+    fn shortcut_index_matches_normalized_chords_without_listing() {
+        let mut s = Snippets::default();
+        s.insert(
+            "Ctrl+Shift+KeyL".to_string(),
+            "shipped".to_string(),
+            TriggerKind::Shortcut,
+        );
+        assert_eq!(
+            s.match_shortcut("ctrl+shift+keyl"),
+            Some(("Ctrl+Shift+KeyL".to_string(), "shipped".to_string()))
+        );
+        assert_eq!(s.match_shortcut("ctrl+keyl"), None);
+        assert_eq!(normalize_chord("Control+KeyL"), "ctrl+keyl");
     }
 
     #[test]

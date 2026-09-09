@@ -53,6 +53,9 @@ pub struct AppSettings {
     /// In Auto mode, expansions with more words than this threshold will paste;
     /// expansions with this many words or fewer will type out at configured WPM.
     pub auto_paste_words: u32,
+    /// Whether the expansion engine is on. Persisted so a user who pauses
+    /// HyperType does not silently get it re-enabled on the next launch.
+    pub enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -63,6 +66,7 @@ impl Default for AppSettings {
             paste_combo: PasteCombo::default(),
             restore_delay_ms: 5_000,
             auto_paste_words: 15,
+            enabled: true,
         }
     }
 }
@@ -80,6 +84,7 @@ struct StoredSettings {
     paste_combo: Option<serde_json::Value>,
     restore_delay_ms: Option<u32>,
     auto_paste_words: Option<u32>,
+    enabled: Option<bool>,
 }
 
 /// Load settings; a missing or unreadable file means the defaults. A legacy
@@ -110,6 +115,7 @@ pub fn load_settings(path: &Path) -> AppSettings {
             .unwrap_or(defaults.paste_combo),
         restore_delay_ms: stored.restore_delay_ms.unwrap_or(defaults.restore_delay_ms),
         auto_paste_words: stored.auto_paste_words.unwrap_or(defaults.auto_paste_words),
+        enabled: stored.enabled.unwrap_or(defaults.enabled),
     }
 }
 
@@ -311,6 +317,17 @@ mod tests {
         assert_eq!(s.wpm, 600);
         assert_eq!(s.restore_delay_ms, 5_000);
         assert_eq!(s.auto_paste_words, 15);
+        assert!(s.enabled);
+    }
+
+    #[test]
+    fn settings_persist_disabled_engine() {
+        let path = temp_path("settings_disabled");
+        fs::write(&path, r#"{"enabled": false, "wpm": 700}"#).unwrap();
+        let s = load_settings(&path);
+        assert!(!s.enabled);
+        assert_eq!(s.wpm, 700);
+        fs::remove_file(&path).ok();
     }
 
     #[test]
@@ -333,6 +350,7 @@ mod tests {
             paste_combo: PasteCombo::ShiftInsert,
             restore_delay_ms: 400,
             auto_paste_words: 25,
+            enabled: false,
         };
         save_settings(&path, &out).unwrap();
         let s = load_settings(&path);
@@ -341,6 +359,7 @@ mod tests {
         assert_eq!(s.paste_combo, PasteCombo::ShiftInsert);
         assert_eq!(s.restore_delay_ms, 400);
         assert_eq!(s.auto_paste_words, 25);
+        assert!(!s.enabled);
         fs::remove_file(&path).ok();
     }
 

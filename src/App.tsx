@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import {
   api,
   MAX_TEXT_TRIGGER_CHARS,
@@ -150,6 +150,7 @@ export default function App() {
   const [repairingHook, setRepairingHook] = createSignal(false);
   const [elevating, setElevating] = createSignal(false);
   const [hookMessage, setHookMessage] = createSignal("");
+  const [settingsError, setSettingsError] = createSignal("");
 
   async function handleRepairHook() {
     if (repairingHook()) return;
@@ -216,6 +217,10 @@ export default function App() {
     );
   });
 
+  // Reorder indices are positions in the search-filtered list, so a drag while
+  // a filter is active would move the wrong row in the full list. Lock it then.
+  const reorderLocked = () => search().trim().length > 0;
+
   // Keep editor in sync when a snippet is clicked
   function selectSnippet(s: SnippetView) {
     stopRecording?.();
@@ -240,16 +245,15 @@ export default function App() {
     queueMicrotask(() => triggerInput?.focus());
   }
 
-  // Initial selection once snippets arrive
-  onMount(() => {
-    const check = setInterval(() => {
-      const list = snippets();
-      if (list && list.length > 0 && selectedTrigger() === null && !isCreatingNew()) {
-        selectSnippet(list[0]);
-        clearInterval(check);
-      }
-    }, 100);
-    onCleanup(() => clearInterval(check));
+  // Initial selection: pick the first snippet exactly once, the first time a
+  // non-empty list arrives. Never poll while the list is empty.
+  let didInitialSelect = false;
+  createEffect(() => {
+    const list = snippets();
+    if (didInitialSelect || !list || list.length === 0) return;
+    if (selectedTrigger() !== null || isCreatingNew()) return;
+    didInitialSelect = true;
+    selectSnippet(list[0]);
   });
 
   const enabled = () => status()?.enabled ?? false;
@@ -285,9 +289,11 @@ export default function App() {
   async function changeInsertMode(next: InsertMode) {
     const s = status();
     if (s) mutateStatus({ ...s, insert_mode: next });
+    setSettingsError("");
     try {
       await api.setInsertMode(next);
-    } catch {
+    } catch (err) {
+      setSettingsError(String(err));
       refetchStatus();
     }
   }
@@ -295,9 +301,11 @@ export default function App() {
   async function changePasteCombo(next: PasteCombo) {
     const s = status();
     if (s) mutateStatus({ ...s, paste_combo: next });
+    setSettingsError("");
     try {
       await api.setPasteCombo(next);
-    } catch {
+    } catch (err) {
+      setSettingsError(String(err));
       refetchStatus();
     }
   }
@@ -308,9 +316,11 @@ export default function App() {
     setWpmDrag(null);
     const s = status();
     if (s) mutateStatus({ ...s, wpm: value });
+    setSettingsError("");
     try {
       await api.setWpm(value);
-    } catch {
+    } catch (err) {
+      setSettingsError(String(err));
       refetchStatus();
     }
   }
@@ -321,9 +331,11 @@ export default function App() {
     setRestoreDrag(null);
     const s = status();
     if (s) mutateStatus({ ...s, restore_delay_ms: value });
+    setSettingsError("");
     try {
       await api.setRestoreDelay(value);
-    } catch {
+    } catch (err) {
+      setSettingsError(String(err));
       refetchStatus();
     }
   }
@@ -334,9 +346,11 @@ export default function App() {
     setAutoWordsDrag(null);
     const s = status();
     if (s) mutateStatus({ ...s, auto_paste_words: value });
+    setSettingsError("");
     try {
       await api.setAutoPasteWords(value);
-    } catch {
+    } catch (err) {
+      setSettingsError(String(err));
       refetchStatus();
     }
   }
@@ -404,11 +418,20 @@ export default function App() {
     };
     const stop = () => {
       window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointerdown", cancel, true);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("focusout", cancel);
       setRecording(false);
       stopRecording = undefined;
     };
+    const cancel = () => stop();
     stopRecording = stop;
     window.addEventListener("keydown", onKeyDown, true);
+    // Click-away, focus loss, or window blur all cancel recording so keys are
+    // not swallowed while the user is stuck in record mode.
+    window.addEventListener("pointerdown", cancel, true);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("focusout", cancel);
   }
 
   function insertToken(token: string) {
@@ -490,7 +513,7 @@ export default function App() {
   }
 
   function startDrag(e: PointerEvent & { currentTarget: HTMLElement }, index: number) {
-    if (e.button !== 0 || dragIdx() !== null) return;
+    if (e.button !== 0 || dragIdx() !== null || reorderLocked()) return;
     e.preventDefault();
     rowHeight = (e.currentTarget.closest("div.studio-item") as HTMLElement)?.offsetHeight ?? 52;
     const startY = e.clientY;
@@ -521,6 +544,7 @@ export default function App() {
   }
 
   function gripKeys(e: KeyboardEvent, index: number) {
+    if (reorderLocked()) return;
     const count = snippets()?.length ?? 0;
     if (e.key === "ArrowUp" && index > 0) {
       e.preventDefault();
@@ -563,11 +587,10 @@ export default function App() {
     try {
       const result = await api.importSnippets();
       if (result) {
-        setTransferMessage(
-          result.skipped > 0
-            ? `Imported ${result.imported}, skipped ${result.skipped}`
-            : `Imported ${result.imported}`,
-        );
+        const parts = [`Imported ${result.imported}`];
+        if (result.overwritten > 0) parts.push(`overwrote ${result.overwritten}`);
+        if (result.skipped > 0) parts.push(`skipped ${result.skipped}`);
+        setTransferMessage(parts.join(", "));
         await Promise.all([refetchSnippets(), refetchStatus()]);
         setTimeout(() => setTransferMessage(""), 3000);
       }
@@ -717,6 +740,8 @@ export default function App() {
                       <button
                         class="drag-grip"
                         aria-label={`Reorder ${s.trigger}`}
+                        title={reorderLocked() ? "Clear the search to reorder" : "Drag to reorder"}
+                        disabled={reorderLocked()}
                         onPointerDown={(e) => startDrag(e, i())}
                         onKeyDown={(e) => gripKeys(e, i())}
                         onClick={(e) => e.stopPropagation()}
@@ -929,6 +954,11 @@ export default function App() {
             </div>
 
             <div class="settings-modal-body">
+              <Show when={settingsError()}>
+                <span class="error-message">
+                  <IconClose /> {settingsError()}
+                </span>
+              </Show>
               <div class="pref-row">
                 <div class="pref-info">
                   <span class="pref-title">Text Expansion Engine</span>
@@ -1183,7 +1213,9 @@ export default function App() {
 
             <div class="settings-modal-footer">
               <div class="footer-version-group">
-                <span class="app-version-tag">HyperType v{status()?.version ?? "1.1.4"}</span>
+                <span class="app-version-tag">
+                  {status()?.version ? `HyperType v${status()!.version}` : "HyperType"}
+                </span>
                 <Show when={!updateInfo()}>
                   <button
                     type="button"

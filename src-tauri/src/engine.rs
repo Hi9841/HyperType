@@ -31,7 +31,9 @@ const WM_SYSKEYUP: u32 = 0x0105;
 /// implementation is `WinHost`; tests supply a mock.
 pub trait EngineHost {
     fn foreground_window(&self) -> isize;
-    fn decode_char(&self, vk: u32, scan: u32, keystate: &[u8; 256]) -> Option<char>;
+    fn focused_control(&self) -> isize;
+    fn seed_modifier_state(&self, keystate: &mut [u8; 256]);
+    fn decode_key(&self, vk: u32, scan: u32, keystate: &[u8; 256]) -> platform::Decoded;
     fn is_password_field(&self) -> bool;
     fn expand(&self, trigger_char_len: usize, text: &str);
 }
@@ -43,8 +45,14 @@ impl EngineHost for WinHost {
     fn foreground_window(&self) -> isize {
         platform::foreground_window()
     }
-    fn decode_char(&self, vk: u32, scan: u32, keystate: &[u8; 256]) -> Option<char> {
-        platform::decode_char(vk, scan, keystate)
+    fn focused_control(&self) -> isize {
+        platform::focused_control()
+    }
+    fn seed_modifier_state(&self, keystate: &mut [u8; 256]) {
+        platform::seed_modifier_state(keystate);
+    }
+    fn decode_key(&self, vk: u32, scan: u32, keystate: &[u8; 256]) -> platform::Decoded {
+        platform::decode_key(vk, scan, keystate)
     }
     fn is_password_field(&self) -> bool {
         platform::is_password_field()
@@ -61,6 +69,8 @@ struct Engine {
     buffer: Vec<char>,
     keystate: [u8; 256],
     last_foreground: isize,
+    last_focused_control: isize,
+    last_context_epoch: u64,
 }
 
 impl Engine {
@@ -69,16 +79,31 @@ impl Engine {
             buffer: Vec::with_capacity(MAX_BUFFER),
             keystate: [0u8; 256],
             last_foreground: 0,
+            last_focused_control: 0,
+            last_context_epoch: crate::keyboard::context_reset_epoch(),
         }
     }
 
     fn handle(&mut self, host: &dyn EngineHost, state: &AppState, ev: KeyEvent) {
         // Reset the buffer when focus moves to another window: the caret context
         // is gone, so anything typed before no longer precedes the cursor.
-        let fg = host.foreground_window();
-        if fg != self.last_foreground {
+        let foreground = host.foreground_window();
+        let focused_control = host.focused_control();
+        if foreground != self.last_foreground || focused_control != self.last_focused_control {
             self.buffer.clear();
-            self.last_foreground = fg;
+            self.last_foreground = foreground;
+            self.last_focused_control = focused_control;
+            host.seed_modifier_state(&mut self.keystate);
+        }
+
+        // A click or drag-select can move the caret inside the same window
+        // without changing the foreground HWND. The mouse hook bumps this
+        // epoch, so a stale prefix is never completed against unrelated text.
+        let context_epoch = crate::keyboard::context_reset_epoch();
+        if context_epoch != self.last_context_epoch {
+            self.buffer.clear();
+            self.last_context_epoch = context_epoch;
+            host.seed_modifier_state(&mut self.keystate);
         }
 
         let down = ev.message == WM_KEYDOWN || ev.message == WM_SYSKEYDOWN;
@@ -111,9 +136,28 @@ impl Engine {
             return;
         }
 
+        let ctrl = self.keystate[consts::VK_CONTROL as usize] & 0x80 != 0;
+        let alt = self.keystate[consts::VK_MENU as usize] & 0x80 != 0;
+        let win = (self.keystate[consts::VK_LWIN as usize]
+            | self.keystate[consts::VK_RWIN as usize])
+            & 0x80
+            != 0;
+        let shift = self.keystate[consts::VK_SHIFT as usize] & 0x80 != 0;
+
         // Editing / navigation keys.
         if ev.vk == consts::VK_BACK {
-            self.buffer.pop();
+            // Ctrl/Alt/Win+Backspace deletes a word (or is an undo), so the
+            // target is no longer just "one character shorter".
+            if ctrl || alt || win {
+                self.buffer.clear();
+            } else {
+                self.buffer.pop();
+            }
+            return;
+        }
+        if ev.vk == consts::VK_INSERT {
+            // Shift+Insert pastes and Ctrl+Insert copies: both change context.
+            self.buffer.clear();
             return;
         }
         if consts::is_navigation(ev.vk)
@@ -131,14 +175,6 @@ impl Engine {
         // Shortcut combos (Ctrl+x, Win+x) are commands, not text. AltGr is
         // Ctrl+Alt and DOES produce characters, so only bail when Ctrl is held
         // without Alt.
-        let ctrl = self.keystate[consts::VK_CONTROL as usize] & 0x80 != 0;
-        let alt = self.keystate[consts::VK_MENU as usize] & 0x80 != 0;
-        let win = (self.keystate[consts::VK_LWIN as usize]
-            | self.keystate[consts::VK_RWIN as usize])
-            & 0x80
-            != 0;
-        let shift = self.keystate[consts::VK_SHIFT as usize] & 0x80 != 0;
-
         if crate::shortcuts::try_match_chord_fallback(ev.vk, ctrl, alt, shift, win, state) {
             self.buffer.clear();
             return;
@@ -149,17 +185,22 @@ impl Engine {
             return;
         }
 
-        // Decode to a character in the foreground app's layout.
-        if let Some(ch) = host.decode_char(ev.vk, ev.scan, &self.keystate) {
-            if ch.is_control() {
-                return;
+        // Decode text without disturbing the foreground app's dead-key state.
+        match host.decode_key(ev.vk, ev.scan, &self.keystate) {
+            platform::Decoded::Text(text) => {
+                self.buffer.extend(text.chars());
+                if self.buffer.len() > MAX_BUFFER {
+                    let overflow = self.buffer.len() - MAX_BUFFER;
+                    self.buffer.drain(0..overflow);
+                }
+                self.try_expand(host, state);
             }
-            self.buffer.push(ch);
-            if self.buffer.len() > MAX_BUFFER {
-                let overflow = self.buffer.len() - MAX_BUFFER;
-                self.buffer.drain(0..overflow);
+            platform::Decoded::Dead => {
+                // We cannot mirror composition without mutating the foreground
+                // app's keyboard buffer, so never match across a dead key.
+                self.buffer.clear();
             }
-            self.try_expand(host, state);
+            platform::Decoded::None => {}
         }
     }
 
@@ -177,7 +218,10 @@ impl Engine {
 
     fn try_expand(&mut self, host: &dyn EngineHost, state: &AppState) {
         let matched = {
-            let snippets = state.snippets.read().unwrap();
+            let snippets = state
+                .snippets
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             snippets.match_suffix(&self.buffer)
         };
         if let Some((trigger_len, expansion)) = matched {
@@ -203,6 +247,7 @@ pub fn start(state: Arc<AppState>) -> Sender<KeyEvent> {
 fn run(state: Arc<AppState>, rx: Receiver<KeyEvent>) {
     let host = WinHost;
     let mut engine = Engine::new();
+    host.seed_modifier_state(&mut engine.keystate);
     // recv() blocks until the hook sends; the thread sleeps otherwise (0% CPU).
     while let Ok(ev) = rx.recv() {
         engine.handle(&host, &state, ev);
@@ -223,6 +268,7 @@ mod tests {
     /// toggleable password flag; records every expansion request.
     struct MockHost {
         foreground: Cell<isize>,
+        focused_control: Cell<isize>,
         password: Cell<bool>,
         expansions: RefCell<Vec<(usize, String)>>,
     }
@@ -231,6 +277,7 @@ mod tests {
         fn new() -> Self {
             MockHost {
                 foreground: Cell::new(1),
+                focused_control: Cell::new(1),
                 password: Cell::new(false),
                 expansions: RefCell::new(Vec::new()),
             }
@@ -241,15 +288,25 @@ mod tests {
         fn foreground_window(&self) -> isize {
             self.foreground.get()
         }
-        fn decode_char(&self, vk: u32, _scan: u32, _keystate: &[u8; 256]) -> Option<char> {
+        fn focused_control(&self) -> isize {
+            self.focused_control.get()
+        }
+        fn seed_modifier_state(&self, _keystate: &mut [u8; 256]) {}
+        fn decode_key(&self, vk: u32, _scan: u32, _keystate: &[u8; 256]) -> platform::Decoded {
             if vk == 0x20 {
-                Some(' ')
+                platform::Decoded::Text(" ".to_string())
             } else if (0x41..=0x5A).contains(&vk) {
-                Some((b'a' + (vk as u8 - 0x41)) as char) // letters as lowercase
+                let ch = (b'a' + (vk as u8 - 0x41)) as char;
+                platform::Decoded::Text(ch.to_string())
             } else if (0x30..=0x39).contains(&vk) {
-                Some((b'0' + (vk as u8 - 0x30)) as char)
+                let ch = (b'0' + (vk as u8 - 0x30)) as char;
+                platform::Decoded::Text(ch.to_string())
+            } else if vk == 0xBA {
+                platform::Decoded::Text("gm".to_string())
+            } else if vk == 0xDE {
+                platform::Decoded::Dead
             } else {
-                None
+                platform::Decoded::None
             }
         }
         fn is_password_field(&self) -> bool {
@@ -365,6 +422,34 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_backspace_clears_buffer_instead_of_popping() {
+        // Ctrl+Backspace deletes a word in the target, so popping one char
+        // would desync the buffer and let "gm" fire after unrelated edits.
+        let host = MockHost::new();
+        let state = state_with(&[("gm", "Good morning")]);
+        let mut engine = Engine::new();
+        down(&mut engine, &host, &state, vk_of('g'));
+        down(&mut engine, &host, &state, vk_of('x'));
+        down(&mut engine, &host, &state, 0xA2); // Left Ctrl down (hook reports side-specific VKs)
+        down(&mut engine, &host, &state, VK_BACK); // Ctrl+Backspace
+        down(&mut engine, &host, &state, vk_of('m'));
+        assert!(host.expansions.borrow().is_empty());
+    }
+
+    #[test]
+    fn context_epoch_change_clears_buffer() {
+        // A click or drag in the same window moves the caret without a
+        // foreground change; the engine must not complete the old prefix.
+        let host = MockHost::new();
+        let state = state_with(&[("gm", "Good morning")]);
+        let mut engine = Engine::new();
+        down(&mut engine, &host, &state, vk_of('g'));
+        engine.last_context_epoch = engine.last_context_epoch.wrapping_sub(1);
+        down(&mut engine, &host, &state, vk_of('m'));
+        assert!(host.expansions.borrow().is_empty());
+    }
+
+    #[test]
     fn navigation_resets_buffer() {
         let host = MockHost::new();
         let state = state_with(&[("gm", "Good morning")]);
@@ -382,6 +467,40 @@ mod tests {
         let mut engine = Engine::new();
         down(&mut engine, &host, &state, vk_of('g'));
         host.foreground.set(2); // user switched windows
+        down(&mut engine, &host, &state, vk_of('m'));
+        assert!(host.expansions.borrow().is_empty());
+    }
+
+    #[test]
+    fn focused_control_change_resets_buffer() {
+        let host = MockHost::new();
+        let state = state_with(&[("gm", "Good morning")]);
+        let mut engine = Engine::new();
+        down(&mut engine, &host, &state, vk_of('g'));
+        host.focused_control.set(2);
+        down(&mut engine, &host, &state, vk_of('m'));
+        assert!(host.expansions.borrow().is_empty());
+    }
+
+    #[test]
+    fn multi_scalar_decode_appends_every_scalar() {
+        let host = MockHost::new();
+        let state = state_with(&[("gm", "Good morning")]);
+        let mut engine = Engine::new();
+        down(&mut engine, &host, &state, 0xBA);
+        assert_eq!(
+            *host.expansions.borrow(),
+            vec![(2, "Good morning".to_string())]
+        );
+    }
+
+    #[test]
+    fn dead_key_clears_buffer_and_bypasses_matching() {
+        let host = MockHost::new();
+        let state = state_with(&[("gm", "Good morning")]);
+        let mut engine = Engine::new();
+        down(&mut engine, &host, &state, vk_of('g'));
+        down(&mut engine, &host, &state, 0xDE);
         down(&mut engine, &host, &state, vk_of('m'));
         assert!(host.expansions.borrow().is_empty());
     }

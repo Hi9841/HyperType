@@ -69,7 +69,10 @@ pub struct Status {
 
 #[derive(Serialize)]
 pub struct ImportSummary {
+    /// Brand-new triggers added during the import.
     pub imported: usize,
+    /// Existing triggers whose expansion/kind were replaced.
+    pub overwritten: usize,
     pub skipped: usize,
 }
 
@@ -87,7 +90,7 @@ pub fn get_status(state: State<Arc<AppState>>) -> Status {
         auto_paste_words: expansion::auto_paste_words(),
         hook_active: crate::keyboard::is_hook_installed(),
         hook_events: crate::keyboard::get_event_count(),
-        hook_healthy: crate::keyboard::is_heartbeat_healthy(),
+        hook_healthy: crate::keyboard::is_hook_healthy(),
         is_elevated: crate::platform::is_elevated(),
     }
 }
@@ -98,48 +101,65 @@ pub fn restart_elevated() -> Result<(), String> {
 }
 
 /// Settings live as expansion-module atomics; persistence just reads them
-/// back out.
-fn persist_settings() {
+/// back out. `pub(crate)` so the tray menu can persist an enable/disable.
+/// Returns the write error so the UI can surface it instead of claiming a
+/// change was saved when only the in-memory atomics moved.
+pub(crate) fn persist_settings(state: &Arc<AppState>) -> Result<(), String> {
     let settings = storage::AppSettings {
         insert_mode: expansion::insert_mode(),
         wpm: expansion::wpm(),
         paste_combo: expansion::paste_combo(),
         restore_delay_ms: expansion::restore_delay_ms(),
         auto_paste_words: expansion::auto_paste_words(),
+        enabled: state.enabled.load(Ordering::Relaxed),
     };
-    if let Err(e) = storage::save_settings(&storage::settings_file_path(), &settings) {
-        crate::logging::error(&format!("failed to persist settings: {e}"));
-    }
+    storage::save_settings(&storage::settings_file_path(), &settings).map_err(|e| {
+        let message = format!("failed to persist settings: {e}");
+        crate::logging::error(&message);
+        message
+    })
 }
 
 #[tauri::command]
-pub fn set_insert_mode(mode: InsertMode) {
+pub fn set_insert_mode(
+    state: State<Arc<AppState>>,
+    mode: InsertMode,
+) -> Result<(), String> {
     expansion::set_insert_mode(mode);
-    persist_settings();
+    persist_settings(state.inner())
 }
 
 #[tauri::command]
-pub fn set_wpm(wpm: u32) {
+pub fn set_wpm(state: State<Arc<AppState>>, wpm: u32) -> Result<(), String> {
     expansion::set_wpm(wpm);
-    persist_settings();
+    persist_settings(state.inner())
 }
 
 #[tauri::command]
-pub fn set_paste_combo(combo: PasteCombo) {
+pub fn set_paste_combo(
+    state: State<Arc<AppState>>,
+    combo: PasteCombo,
+) -> Result<(), String> {
     expansion::set_paste_combo(combo);
-    persist_settings();
+    persist_settings(state.inner())
 }
 
 #[tauri::command]
-pub fn set_restore_delay_ms(delay_ms: u32) {
+pub fn set_restore_delay_ms(
+    state: State<Arc<AppState>>,
+    delay_ms: u32,
+) -> Result<(), String> {
     expansion::set_restore_delay_ms(delay_ms);
-    persist_settings();
+    persist_settings(state.inner())
 }
 
 #[tauri::command]
-pub fn set_auto_paste_words(words: u32) {
+pub fn set_auto_paste_words(
+    state: State<Arc<AppState>>,
+    words: u32,
+) -> Result<(), String> {
     expansion::set_auto_paste_words(words);
-    persist_settings();
+    persist_settings(state.inner())
 }
 
 #[tauri::command]
@@ -189,8 +209,7 @@ pub fn add_snippet(
         let mut snippets = state.snippets.write().unwrap();
         snippets.insert(trigger, expansion, kind);
     }
-    persist(state.inner());
-    Ok(())
+    persist(state.inner())
 }
 
 #[tauri::command]
@@ -250,8 +269,7 @@ pub fn edit_snippet(
         shortcuts::unregister_one(&app, &old_trigger);
     }
 
-    persist(state.inner());
-    Ok(())
+    persist(state.inner())
 }
 
 #[tauri::command]
@@ -267,8 +285,7 @@ pub fn remove_snippet(
     if removed_kind == Some(TriggerKind::Shortcut) {
         shortcuts::unregister_one(&app, &trigger);
     }
-    persist(state.inner());
-    Ok(())
+    persist(state.inner())
 }
 
 #[tauri::command]
@@ -298,12 +315,8 @@ pub fn import_snippets(
         ));
     }
     let imported = storage::parse_snippets(&text)?;
-    if imported.len() > MAX_SNIPPETS {
-        return Err(format!(
-            "Import contains too many snippets (maximum {MAX_SNIPPETS})."
-        ));
-    }
     let mut imported_count = 0usize;
+    let mut overwritten_count = 0usize;
     let mut skipped = 0usize;
     let mut projected_count = state.snippets.read().unwrap().len();
     let mut accepted = Vec::with_capacity(imported.len());
@@ -341,34 +354,44 @@ pub fn import_snippets(
 
         if is_new {
             projected_count += 1;
+            imported_count += 1;
+        } else {
+            overwritten_count += 1;
         }
         accepted.push((trigger, expansion, kind));
-        imported_count += 1;
     }
 
-    if imported_count > 0 {
+    if !accepted.is_empty() {
         state.snippets.write().unwrap().insert_many(accepted);
-        persist(state.inner());
+        persist(state.inner())?;
     }
     Ok(ImportSummary {
         imported: imported_count,
+        overwritten: overwritten_count,
         skipped,
     })
 }
 
 #[tauri::command]
-pub fn reorder_snippets(state: State<Arc<AppState>>, order: Vec<String>) {
+pub fn reorder_snippets(
+    state: State<Arc<AppState>>,
+    order: Vec<String>,
+) -> Result<(), String> {
     {
         let mut snippets = state.snippets.write().unwrap();
         snippets.set_order(order);
     }
-    persist(state.inner());
+    persist(state.inner())
 }
 
 #[tauri::command]
 pub fn toggle_enabled(app: AppHandle, state: State<Arc<AppState>>) -> bool {
     let now = !state.enabled.fetch_xor(true, Ordering::Relaxed);
     crate::sync_tray_toggle(&app, now);
+    // A paused engine must release OS hotkeys; otherwise RegisterHotKey keeps
+    // swallowing those chords from the focused app.
+    crate::shortcuts::sync_enabled(&app, state.inner(), now);
+    let _ = persist_settings(state.inner());
     now
 }
 
@@ -387,7 +410,7 @@ pub fn reinstall_hook() -> Result<bool, String> {
     }
 }
 
-fn persist(state: &Arc<AppState>) {
+fn persist(state: &Arc<AppState>) -> Result<(), String> {
     // Order snapshots and writes without holding the engine's snippet lock
     // during JSON serialization or disk I/O. The last mutation therefore
     // always produces the last on-disk snapshot.
@@ -395,9 +418,11 @@ fn persist(state: &Arc<AppState>) {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let entries = state.snippets.read().unwrap().list();
-    if let Err(e) = storage::save_entries(&state.data_path, entries) {
-        crate::logging::error(&format!("failed to persist snippets: {e}"));
-    }
+    storage::save_entries(&state.data_path, entries).map_err(|e| {
+        let message = format!("failed to persist snippets: {e}");
+        crate::logging::error(&message);
+        message
+    })
 }
 
 #[cfg(test)]

@@ -8,9 +8,7 @@ use std::path::Path;
 
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND};
-use windows::Win32::Security::{
-    GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
-};
+use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 use windows::Win32::System::Threading::{
     GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
     PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -25,6 +23,19 @@ use windows::Win32::UI::WindowsAndMessaging::{
 /// Edit-control style bit. Defined locally to avoid depending on whether the
 /// `windows` crate surfaces ES_* constants in this version.
 const ES_PASSWORD: isize = 0x0020;
+
+/// Ask `ToUnicodeEx` to translate without modifying the calling thread's
+/// kernel keyboard buffer. This prevents a passive decoder from consuming or
+/// composing dead keys before the foreground application sees them.
+const TO_UNICODE_NO_STATE_CHANGE: u32 = 0x04;
+
+/// Full result of translating one keyboard event.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Decoded {
+    Text(String),
+    Dead,
+    None,
+}
 
 /// Raw handle of the foreground window, used to detect focus changes.
 pub fn foreground_window() -> isize {
@@ -131,19 +142,86 @@ pub(crate) fn foreground_keyboard_layout() -> HKL {
     }
 }
 
-/// Translate a virtual-key + scan-code into the character it would produce in
-/// the foreground app's keyboard layout, honoring our tracked modifier state.
-/// Returns `None` for non-text keys and dead keys.
-pub fn decode_char(vk: u32, scan: u32, keystate: &[u8; 256]) -> Option<char> {
+fn decoded_from_utf16(result: i32, buffer: &[u16]) -> Decoded {
+    match result {
+        result if result < 0 => Decoded::Dead,
+        0 => Decoded::None,
+        result => {
+            let produced = (result as usize).min(buffer.len());
+            let text = String::from_utf16_lossy(&buffer[..produced]);
+            if text.is_empty() {
+                Decoded::None
+            } else {
+                Decoded::Text(text)
+            }
+        }
+    }
+}
+
+/// Translate a virtual-key + scan-code into every Unicode scalar it would
+/// produce in the foreground app's keyboard layout, honoring our tracked
+/// modifier state and reporting dead keys distinctly.
+pub(crate) fn decode_key(vk: u32, scan: u32, keystate: &[u8; 256]) -> Decoded {
     unsafe {
         let hkl = foreground_keyboard_layout();
-        let mut buf = [0u16; 8];
-        let n = ToUnicodeEx(vk, scan, keystate, &mut buf, 0, hkl);
-        if n > 0 {
-            String::from_utf16_lossy(&buf[..n as usize]).chars().next()
+        let mut buffer = [0u16; 16];
+        let result = ToUnicodeEx(
+            vk,
+            scan,
+            keystate,
+            &mut buffer,
+            TO_UNICODE_NO_STATE_CHANGE,
+            hkl,
+        );
+        decoded_from_utf16(result, &buffer)
+    }
+}
+
+/// Compatibility helper for callers that only accept one character. The
+/// engine uses `decode_key` so it can handle dead keys and multi-scalar text.
+#[allow(dead_code)]
+pub fn decode_char(vk: u32, scan: u32, keystate: &[u8; 256]) -> Option<char> {
+    match decode_key(vk, scan, keystate) {
+        Decoded::Text(text) => text.chars().next(),
+        Decoded::Dead | Decoded::None => None,
+    }
+}
+
+/// Seed the engine's tracked keyboard state from the real physical state.
+/// Without this, starting HyperType while a modifier or CapsLock is active
+/// decodes the next keystroke as plain text (Ctrl+C read as "c" and firing a
+/// snippet) or with the wrong case. Called at engine start and after any
+/// context reset.
+pub fn seed_modifier_state(keystate: &mut [u8; 256]) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, GetKeyState, VK_CAPITAL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN,
+        VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN,
+    };
+
+    let modifiers = [
+        VK_LSHIFT,
+        VK_RSHIFT,
+        VK_LCONTROL,
+        VK_RCONTROL,
+        VK_LMENU,
+        VK_RMENU,
+        VK_LWIN,
+        VK_RWIN,
+    ];
+    for vk in modifiers {
+        let down = unsafe { (GetAsyncKeyState(vk.0 as i32) as u16 & 0x8000) != 0 };
+        if down {
+            keystate[vk.0 as usize] |= 0x80;
         } else {
-            None
+            keystate[vk.0 as usize] &= !0x80;
         }
+    }
+
+    let caps = unsafe { GetKeyState(VK_CAPITAL.0 as i32) & 0x0001 } != 0;
+    if caps {
+        keystate[VK_CAPITAL.0 as usize] |= 0x01;
+    } else {
+        keystate[VK_CAPITAL.0 as usize] &= !0x01;
     }
 }
 
@@ -217,7 +295,10 @@ pub fn restart_elevated() -> Result<(), String> {
         if (res.0 as usize) > 32 {
             std::process::exit(0);
         } else {
-            Err(format!("ShellExecute runas failed with code {}", res.0 as usize))
+            Err(format!(
+                "ShellExecute runas failed with code {}",
+                res.0 as usize
+            ))
         }
     }
 }
@@ -233,5 +314,20 @@ mod tests {
             "wezterm-gui.exe"
         );
         assert_eq!(process_basename(""), "");
+    }
+
+    #[test]
+    fn decodes_every_utf16_scalar() {
+        let buffer = [b'a' as u16, 0xD83D, 0xDE00, b'z' as u16];
+        assert_eq!(
+            decoded_from_utf16(4, &buffer),
+            Decoded::Text("a\u{1F600}z".to_string())
+        );
+    }
+
+    #[test]
+    fn distinguishes_dead_keys_from_non_text_keys() {
+        assert_eq!(decoded_from_utf16(-1, &[0x00B4]), Decoded::Dead);
+        assert_eq!(decoded_from_utf16(0, &[]), Decoded::None);
     }
 }

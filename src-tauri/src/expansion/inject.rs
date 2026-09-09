@@ -2,7 +2,10 @@
 //! injected flag, so our own keyboard hook ignores it (no self-matching loop).
 
 use std::mem::size_of;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use windows::Win32::Foundation::GetLastError;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, VkKeyScanExW, HKL, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
     KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY, VK_BACK, VK_CONTROL,
@@ -64,8 +67,32 @@ fn send(inputs: &[INPUT]) {
     if inputs.is_empty() {
         return;
     }
-    unsafe {
-        SendInput(inputs, size_of::<INPUT>() as i32);
+    let sent = unsafe { SendInput(inputs, size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        let err = unsafe { GetLastError() };
+        log_send_failure(sent, inputs.len(), err);
+    }
+}
+
+static LAST_SEND_FAIL_LOG_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Rate-limited so a blocked type-out (one `send` per character) cannot flood
+/// the log. UIPI blocks the whole batch when the focused app is elevated.
+fn log_send_failure(sent: u32, expected: usize, err: windows::Win32::Foundation::WIN32_ERROR) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let prev = LAST_SEND_FAIL_LOG_MS.load(Ordering::Relaxed);
+    if now.saturating_sub(prev) >= 5_000
+        && LAST_SEND_FAIL_LOG_MS
+            .compare_exchange(prev, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    {
+        crate::logging::error(&format!(
+            "SendInput delivered {sent}/{expected} events (GetLastError={err:?}); if this repeats, \
+             the focused window is likely elevated and blocking synthetic input (UIPI)"
+        ));
     }
 }
 
@@ -334,12 +361,41 @@ fn send_atomic_replacement(trigger_char_len: usize, content: Vec<INPUT>) {
     restore_modifiers(&still_held(&held, &current));
 }
 
+/// Build the input events for literal text in a single atomic batch.
+/// Newlines and tabs become real VK_RETURN/VK_TAB presses: Windows does not
+/// synthesize WM_CHAR for control code points, so sending `\n`/`\t` as
+/// `KEYEVENTF_UNICODE` silently drops them.
+fn unicode_content_steps(text: &str) -> Vec<INPUT> {
+    let mut content = Vec::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' && chars.peek() == Some(&'\n') {
+            chars.next();
+        }
+        match ch {
+            '\r' | '\n' => {
+                content.push(key_vk(VK_RETURN, false));
+                content.push(key_vk(VK_RETURN, true));
+            }
+            '\t' => {
+                content.push(key_vk(VK_TAB, false));
+                content.push(key_vk(VK_TAB, true));
+            }
+            _ => {
+                let mut units = [0u16; 2];
+                for &unit in ch.encode_utf16(&mut units).iter() {
+                    content.push(key_unicode(unit, false));
+                    content.push(key_unicode(unit, true));
+                }
+            }
+        }
+    }
+    content
+}
+
 /// Replace a short trigger with Unicode input in one Windows input batch.
 pub fn replace_with_unicode_atomic(trigger_char_len: usize, text: &str) {
-    let content = text
-        .encode_utf16()
-        .flat_map(|unit| [key_unicode(unit, false), key_unicode(unit, true)])
-        .collect();
+    let content = unicode_content_steps(text);
     send_atomic_replacement(trigger_char_len, content);
 }
 
@@ -643,6 +699,49 @@ mod tests {
     #[test]
     fn released_modifier_is_not_restored() {
         assert_eq!(still_held(&[LSHIFT], &[]), Vec::<u16>::new());
+    }
+
+    #[test]
+    fn atomic_unicode_keeps_newlines_and_tabs() {
+        // Windows drops control code points sent as KEYEVENTF_UNICODE, so the
+        // atomic path must emit real Return/Tab presses instead.
+        let steps = unicode_content_steps("a\r\nb\tc");
+        let as_pairs: Vec<(u16, bool)> = steps
+            .iter()
+            .map(|input| unsafe {
+                let ki = input.Anonymous.ki;
+                (
+                    ki.wVk.0,
+                    ki.dwFlags.0 & KEYEVENTF_KEYUP.0 != 0,
+                )
+            })
+            .collect();
+        assert!(as_pairs.contains(&(VK_RETURN.0, false)));
+        assert!(as_pairs.contains(&(VK_TAB.0, false)));
+        // No control character should survive as a unicode event.
+        let control_units: Vec<u16> = steps
+            .iter()
+            .filter(|input| {
+                let ki = unsafe { input.Anonymous.ki };
+                ki.dwFlags.0 & KEYEVENTF_UNICODE.0 != 0
+                    && matches!(ki.wScan, 0x000A | 0x000D | 0x0009)
+            })
+            .map(|input| unsafe { input.Anonymous.ki.wScan })
+            .collect();
+        assert!(control_units.is_empty(), "leaked control units: {control_units:?}");
+    }
+
+    #[test]
+    fn atomic_unicode_collapses_crlf() {
+        let steps = unicode_content_steps("x\r\ny");
+        let returns = steps
+            .iter()
+            .filter(|input| unsafe {
+                let ki = input.Anonymous.ki;
+                ki.wVk.0 == VK_RETURN.0 && ki.dwFlags.0 & KEYEVENTF_KEYUP.0 == 0
+            })
+            .count();
+        assert_eq!(returns, 1, "CRLF must be a single Return");
     }
 
     #[test]

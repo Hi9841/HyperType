@@ -44,6 +44,7 @@ export interface Status {
 
 export interface ImportSummary {
   imported: number;
+  overwritten: number;
   skipped: number;
 }
 
@@ -212,6 +213,7 @@ function browserMock(): Api {
                   kind: "text" as TriggerKind,
                 }));
             let imported = 0;
+            let overwritten = 0;
             let skipped = 0;
             for (const entry of entries) {
               const trigger = String(entry.trigger ?? "").trim();
@@ -223,12 +225,13 @@ function browserMock(): Api {
                 skipped += 1;
                 continue;
               }
+              if (store.has(trigger)) overwritten += 1;
+              else imported += 1;
               store.set(trigger, { expansion, kind });
-              imported += 1;
             }
-            resolve({ imported, skipped });
+            resolve({ imported, overwritten, skipped });
           } catch {
-            resolve({ imported: 0, skipped: 1 });
+            resolve({ imported: 0, overwritten: 0, skipped: 1 });
           }
         };
         input.click();

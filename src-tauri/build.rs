@@ -1,35 +1,13 @@
 fn main() {
-    #[cfg(windows)]
-    {
-        let windows = tauri_build::WindowsAttributes::new().app_manifest(r#"
-<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
-    <security>
-      <requestedPrivileges>
-        <requestedExecutionLevel level="highestAvailable" uiAccess="false"/>
-      </requestedPrivileges>
-    </security>
-  </trustInfo>
-  <dependency>
-    <dependentAssembly>
-      <assemblyIdentity
-        type="win32"
-        name="Microsoft.Windows.Common-Controls"
-        version="6.0.0.0"
-        processorArchitecture="*"
-        publicKeyToken="6595b64144ccf1df"
-        language="*"
-      />
-    </dependentAssembly>
-  </dependency>
-</assembly>
-"#);
-        tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
-            .expect("failed to run build script");
-    }
-
-    #[cfg(not(windows))]
-    {
-        tauri_build::build();
-    }
+    // Default Tauri Windows manifest: requestedExecutionLevel="asInvoker"
+    // plus the Common-Controls v6 dependency.
+    //
+    // Do NOT raise this to `highestAvailable`/`requireAdministrator`. That
+    // forces a UAC consent prompt for administrator users on every launch
+    // (including autostart at logon and updater relaunch), makes the per-user
+    // autostart entry unreliable, blocks single-instance IPC across integrity
+    // levels, and makes the test binary unlaunchable from a normal shell
+    // (os error 740). Elevation is available on demand through the UI's
+    // "Run as Admin" action (platform::restart_elevated).
+    tauri_build::build();
 }

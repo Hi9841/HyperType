@@ -363,19 +363,24 @@ fn parse_offset(offset_str: &str) -> i64 {
         if ch.is_ascii_digit() {
             num_str.push(ch);
         } else {
-            unit = ch.to_ascii_lowercase();
+            unit = ch;
             break;
         }
     }
     let n: i64 = num_str.parse().unwrap_or(0);
-    let seconds_per_unit = match unit {
-        's' => 1,
-        'm' => 60,
-        'h' => 3600,
-        'w' => 7 * 86400,
-        'M' => 30 * 86400,
-        'y' => 365 * 86400,
-        _ => 86400, // 'd' default
+    // 'M' (month) must be matched before lowercasing; otherwise it collapses
+    // into 'm' (minutes) and {date+1M} silently becomes +1 minute.
+    let seconds_per_unit = if unit == 'M' {
+        30 * 86400
+    } else {
+        match unit.to_ascii_lowercase() {
+            's' => 1,
+            'm' => 60,
+            'h' => 3600,
+            'w' => 7 * 86400,
+            'y' => 365 * 86400,
+            _ => 86400, // 'd' default
+        }
     };
     sign * n * seconds_per_unit
 }
@@ -635,6 +640,21 @@ fn paste_via_clipboard(
             _ => clipboard::snapshot(),
         };
 
+        // If the clipboard was locked while we tried to read it, we have no
+        // copy of the user's data. Replacing it would destroy something we can
+        // never restore, so type the expansion instead of pasting.
+        if !saved.is_acquired() {
+            drop(active);
+            crate::logging::error("clipboard snapshot unavailable; expanding via direct typing");
+            match atomic_mode_for_target(target_kind) {
+                Mode::AtomicKeyReplay => {
+                    inject::replace_with_virtual_keys_atomic(trigger_char_len, text)
+                }
+                _ => inject::replace_with_unicode_atomic(trigger_char_len, text),
+            }
+            return;
+        }
+
         if !clipboard::set_unicode_text(text) {
             // EmptyClipboard may have succeeded before allocation failed, so
             // restore immediately before falling back to native typing.
@@ -821,11 +841,16 @@ fn classify_target_parts(title: &str, class_name: &str, process_name: &str) -> T
         || class_name.contains("alacritty")
         || class_name.contains("kitty")
         || class_name.contains("conemu");
+    // Title heuristics are only a fallback for terminals whose process/class
+    // we cannot recognise. Keep them specific: a bare "terminal" match fired
+    // on browser tabs and documents and forced the wrong paste chord, which
+    // made paste-mode expansions fail silently in normal apps.
     let terminal_title = title.contains("windows terminal")
         || title.contains("command prompt")
         || title.contains("powershell")
         || title.contains("pwsh")
-        || title.contains("terminal");
+        || title.contains("cmd.exe")
+        || title.contains("wsl");
 
     if terminal_process || terminal_class || terminal_title {
         let classic_console = process_name == "mintty.exe"
@@ -839,7 +864,10 @@ fn classify_target_parts(title: &str, class_name: &str, process_name: &str) -> T
         });
     }
 
-    if process_name == "codex.exe" || title.contains("codex") {
+    // Codex is a CLI: inside a terminal it is already classified as Terminal
+    // above, which uses the same Ctrl+Shift+V paste. Matching the word "codex"
+    // in a window title wrongly reclassified browser tabs and docs.
+    if process_name == "codex.exe" {
         TargetKind::Codex
     } else {
         TargetKind::Standard
@@ -1066,6 +1094,34 @@ mod tests {
     #[test]
     fn long_pastes_keep_text_clipboard_alive_longer() {
         assert_eq!(restore_delay_from(12_000, false, 1_200, true), 15_000);
+    }
+
+    #[test]
+    fn month_offset_is_not_parsed_as_minutes() {
+        assert_eq!(parse_offset("+1M"), 30 * 86400);
+        assert_eq!(parse_offset("+1m"), 60);
+        assert_eq!(parse_offset("-2M"), -60 * 86400);
+        assert_eq!(parse_offset("+1d"), 86400);
+    }
+
+    #[test]
+    fn bare_terminal_word_in_a_title_does_not_change_the_paste_chord() {
+        // A browser tab or document titled "Terminal" must stay Standard, so
+        // the normal Ctrl+V paste is used instead of a terminal-only chord.
+        let false_positive = classify_target_parts(
+            "Terminal guide - Chrome",
+            "Chrome_WidgetWin_1",
+            "chrome.exe",
+        );
+        assert_eq!(false_positive, TargetKind::Standard);
+
+        // A real terminal is still detected by process name.
+        let real = classify_target_parts(
+            "Terminal",
+            "CASCADIA_HOSTING_WINDOW_CLASS",
+            "WindowsTerminal.exe",
+        );
+        assert_eq!(real, TargetKind::Terminal(PasteCombo::CtrlShiftV));
     }
 
     #[test]

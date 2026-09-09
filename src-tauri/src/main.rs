@@ -97,6 +97,12 @@ fn build_tray(app: &AppHandle, state: Arc<AppState>) -> tauri::Result<()> {
                 let state = app.state::<Arc<AppState>>();
                 let now = !state.enabled.fetch_xor(true, Ordering::Relaxed);
                 let _ = toggle_item.set_checked(now);
+                // Pausing must release OS hotkeys, and the choice must survive
+                // a restart because the tray is the only UI when minimized.
+                crate::shortcuts::sync_enabled(app, state.inner(), now);
+                if let Err(e) = crate::ipc::persist_settings(state.inner()) {
+                    crate::logging::error(&format!("failed to persist enabled toggle: {e}"));
+                }
                 // If the manager window is open, keep its switch in sync.
                 let _ = app.emit("enabled-changed", now);
             }
@@ -135,27 +141,6 @@ fn main() {
         crate::logging::error(&format!("PANIC at {location}: {payload}"));
     }));
 
-    let data_path = storage::data_file_path();
-    let snippets = storage::load_or_default(&data_path);
-    let settings = storage::load_settings(&storage::settings_file_path());
-    expansion::set_insert_mode(settings.insert_mode);
-    expansion::set_wpm(settings.wpm);
-    expansion::set_paste_combo(settings.paste_combo);
-    expansion::set_restore_delay_ms(settings.restore_delay_ms);
-    expansion::set_auto_paste_words(settings.auto_paste_words);
-    let state = Arc::new(AppState {
-        snippets: RwLock::new(snippets),
-        enabled: AtomicBool::new(true),
-        data_path,
-    });
-
-    // Engine + keyboard hook start before the UI: expansion runs regardless of
-    // whether any window is ever opened.
-    let tx = engine::start(state.clone());
-    keyboard::start(tx);
-
-    let setup_state = state.clone();
-
     tauri::Builder::default()
         // single-instance must be registered first.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -170,7 +155,6 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(state)
         .invoke_handler(tauri::generate_handler![
             ipc::get_status,
             ipc::get_snippets,
@@ -192,7 +176,34 @@ fn main() {
         ])
         .setup(move |app| {
             crate::logging::info("Tauri setup callback invoked");
-            build_tray(app.handle(), setup_state.clone())?;
+
+            // Storage, state, engine, and hook start here — after the
+            // single-instance plugin has claimed primary. A rejected secondary
+            // process exits inside the plugin's own setup, before this runs,
+            // so it never starts a second engine or keyboard hook.
+            let data_path = storage::data_file_path();
+            let snippets = storage::load_or_default(&data_path);
+            let settings = storage::load_settings(&storage::settings_file_path());
+            expansion::set_insert_mode(settings.insert_mode);
+            expansion::set_wpm(settings.wpm);
+            expansion::set_paste_combo(settings.paste_combo);
+            expansion::set_restore_delay_ms(settings.restore_delay_ms);
+            expansion::set_auto_paste_words(settings.auto_paste_words);
+            let state = Arc::new(AppState {
+                snippets: RwLock::new(snippets),
+                // Restore the user's last pause/resume choice instead of
+                // silently re-enabling the engine on every launch.
+                enabled: AtomicBool::new(settings.enabled),
+                data_path,
+            });
+            app.manage(state.clone());
+
+            // Engine + keyboard hook start before any window is shown:
+            // expansion runs regardless of whether a window is ever opened.
+            let tx = engine::start(state.clone());
+            keyboard::start(tx);
+
+            build_tray(app.handle(), state.clone())?;
             crate::logging::info("Tray built successfully");
             // Registering shortcuts marshals each Win32 RegisterHotKey call
             // onto the main thread and blocks waiting for it to run. The
@@ -200,7 +211,7 @@ fn main() {
             // inline here deadlocks. Do it from a background thread instead,
             // after `run()` has started the loop.
             let handle = app.handle().clone();
-            let register_state = setup_state.clone();
+            let register_state = state.clone();
             std::thread::spawn(move || {
                 shortcuts::register_all(&handle, &register_state);
             });
@@ -208,6 +219,10 @@ fn main() {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
                 }
+            } else {
+                // The window is created hidden to avoid a flash at logon;
+                // a normal launch shows it explicitly.
+                open_main_window(app.handle());
             }
             Ok(())
         })
