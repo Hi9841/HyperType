@@ -85,10 +85,13 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "HyperType ${{ github.ref_name }}"
           releaseBody: |
-            - Active Hook Ping-Pong Heartbeat & Auto-Recovery Watchdog preventing silent kernel hook drops.
-            - High-Integrity Elevation Manifest (`highestAvailable`) & "Run as Admin" capability for elevated windows.
-            - OS Hotkey Collision Fallback chord matching for shortcuts like Ctrl+L taken by other processes.
-            - Always-on rotating file diagnostics logged to `%APPDATA%\HyperType\hypertype.log`.
+            - Fixed the intermittent failure where the keyboard hook was torn down and reinstalled every few seconds, dropping keystrokes mid-word.
+            - Removed the unreliable SendInput heartbeat probe; recovery now triggers only on a definitive hook failure, with a 30s cooldown and the Repair Hook action.
+            - Non-elevated by default (no UAC on launch, reliable autostart). Use Settings -> "Run as Admin" to expand inside elevated windows.
+            - Dead-key-safe character decoding with full multi-scalar support.
+            - Auto-mode expansions keep newlines and tabs; a busy clipboard is no longer wiped.
+            - Pause releases global hotkeys and the choice persists across restarts.
+            - More accurate paste-target detection (no more wrong paste chord from window titles).
           releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true
