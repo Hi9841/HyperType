@@ -1,4 +1,4 @@
-# Task plan — HyperType reliability audit & fix
+# Task plan - HyperType reliability audit & fix
 
 ## Goal
 Find and fix the root causes of "sometimes it just doesn't work" in HyperType
@@ -13,7 +13,7 @@ release build is running and verified: 40s idle with 0 reinstalls, expansions wo
 Continue the manual regression matrix from the previous message (insertion modes,
 clipboard restore, pause/release hotkeys, import accounting). Then commit.
 
-## Phase 6 — implementation round 2 (subagents) — complete
+## Phase 6 - implementation round 2 (subagents) - complete
 Run `run_04d984a6b883`:
 - task_336d41b717e2 → codex: dead-key-safe decoding, monotonic clock, poison/SendError,
   focused-control context. Files: platform.rs, engine.rs, keyboard.rs. +5 tests.
@@ -46,7 +46,7 @@ Both released/acked; coordinator fixed one leftover warning and re-verified
 - Treat the production log as primary evidence; source claims verified against it.
 - Heartbeat watchdog false-positive was the primary cause and was fixed first.
 - Audit workers read-only; coordinator owned edits to avoid worktree conflicts.
-- Elevation: adopt worker D's recommendation — `asInvoker` + on-demand "Run as Admin".
+- Elevation: adopt worker D's recommendation - `asInvoker` + on-demand "Run as Admin".
 - Deferred the changes that need a larger design (UIA password detection, dead-key/IME,
   elevated broker, Authenticode, single-instance startup ordering) with reasons in findings.md.
 

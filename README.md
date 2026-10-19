@@ -69,7 +69,7 @@ HyperType replaces short abbreviations with full snippets anywhere in Windows as
 - **Buffer & Suffix Matcher (`engine.rs`, `snippets.rs`):** Maintains a rolling character history buffer. Evaluates trigger matches on word boundaries using reverse suffix comparison.
 - **Three Expansion Strategies (`expansion/`):**
   - **Atomic Input (Auto):** Replaces expansions up to 256 characters in one `SendInput` batch, so Enter or the next typed key cannot split or cancel the expansion.
-  - **Keystroke Replay (Type):** Emulates human typing via `SendInput` with configurable inter-character delays (1–20ms).
+  - **Keystroke Replay (Type):** Emulates human typing via `SendInput` with configurable inter-character delays (1-20ms).
   - **Clipboard Paste (long Auto / Paste):** Places text on the Windows Clipboard, sends the application-appropriate paste shortcut (`Ctrl+V`, or `Ctrl+Shift+V` / `Shift+Insert` for terminals), and restores the original clipboard content and format after consumption.
   - **Modifier State Recovery (`expansion/inject.rs`):** Tracks and releases physically held modifiers (`Ctrl`, `Alt`, `Shift`, `Win`) prior to expansion, then restores their exact physical state upon completion.
 - **Safety Checks (`platform.rs`):** Native Win32 `ES_PASSWORD` detection prevents expansion inside password inputs. Active IME composition suspends trigger matching to avoid corrupting multi-byte character input.
@@ -133,7 +133,7 @@ HyperType/
 
 - **Snippets Library:** `%APPDATA%\HyperType\snippets.json`
 - **Application Logs:** `%APPDATA%\HyperType\hypertype.log`
-- **Atomic Persistence:** All write operations write to a sibling temporary file (`.tmp`) followed by an atomic filesystem rename to ensure zero corruption on power loss or process termination.
+- **Atomic Persistence:** Each write operation writes to a sibling temporary file (`.tmp`). Then an atomic filesystem rename replaces the file. A power loss or a process stop cannot corrupt the data.
 
 ```json
 [
@@ -191,7 +191,7 @@ Outputs:
 
 GitHub Actions publishes tagged releases. Keep the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` identical, then push the matching `v<version>` tag.
 
-The repository must define `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets. The release workflow runs unit and live-window expansion tests, builds the signed NSIS installer, and uploads the installer, signature, and `latest.json` required by the in-app updater.
+The repository must define `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets. The release workflow runs the unit tests and the live-window expansion tests. Then it builds the signed NSIS installer. It uploads the installer, the signature, and the `latest.json` file for the in-app updater.
 
 ---
 
