@@ -180,8 +180,7 @@ fn with_modifiers_lifted<T>(work: impl FnOnce() -> T) -> T {
 
 // Paced Type mode stops when the user types again, clicks mouse, or foreground window changes.
 fn typeout_cancelled(token: u64, foreground: isize) -> bool {
-    super::cancel_epoch() != token
-        || crate::platform::foreground_window() != foreground
+    super::cancel_epoch() != token || crate::platform::foreground_window() != foreground
 }
 
 fn type_units_cancellable(text: &str, token: u64, foreground: isize) -> bool {
@@ -710,10 +709,7 @@ mod tests {
             .iter()
             .map(|input| unsafe {
                 let ki = input.Anonymous.ki;
-                (
-                    ki.wVk.0,
-                    ki.dwFlags.0 & KEYEVENTF_KEYUP.0 != 0,
-                )
+                (ki.wVk.0, ki.dwFlags.0 & KEYEVENTF_KEYUP.0 != 0)
             })
             .collect();
         assert!(as_pairs.contains(&(VK_RETURN.0, false)));
@@ -728,7 +724,10 @@ mod tests {
             })
             .map(|input| unsafe { input.Anonymous.ki.wScan })
             .collect();
-        assert!(control_units.is_empty(), "leaked control units: {control_units:?}");
+        assert!(
+            control_units.is_empty(),
+            "leaked control units: {control_units:?}"
+        );
     }
 
     #[test]

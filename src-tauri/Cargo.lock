@@ -1677,7 +1677,7 @@ dependencies = [
 name = "hypertype"
 version = "1.1.6"
 dependencies = [
- "serde",
+ "hypertype-core",
  "serde_json",
  "tauri",
  "tauri-build",
@@ -1687,6 +1687,14 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+]
+
+[[package]]
+name = "hypertype-core"
+version = "1.1.6"
+dependencies = [
+ "serde",
+ "serde_json",
  "windows 0.58.0",
 ]
 

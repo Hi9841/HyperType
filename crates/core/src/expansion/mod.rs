@@ -932,10 +932,7 @@ mod tests {
     #[test]
     fn auto_pastes_text_over_word_threshold_and_types_short_text() {
         set_auto_paste_words(15);
-        assert_eq!(
-            resolve(InsertMode::Auto, "Good morning"),
-            Mode::Native
-        );
+        assert_eq!(resolve(InsertMode::Auto, "Good morning"), Mode::Native);
         let fifteen_words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen";
         assert_eq!(resolve(InsertMode::Auto, fifteen_words), Mode::Native);
 
@@ -973,11 +970,7 @@ mod tests {
         assert_eq!(target, TargetKind::Codex);
         let sixteen_words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen";
         assert_eq!(
-            resolve_for_target(
-                InsertMode::Auto,
-                sixteen_words,
-                target
-            ),
+            resolve_for_target(InsertMode::Auto, sixteen_words, target),
             Mode::Clipboard
         );
         assert_eq!(

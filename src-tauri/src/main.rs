@@ -1,27 +1,20 @@
 // Hide the console window in release; keep it in debug for logs.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app_state;
-mod consts;
-mod engine;
-mod expansion;
 mod ipc;
-mod keyboard;
-mod logging;
-mod platform;
 mod shortcuts;
-mod snippets;
-mod storage;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
+use hypertype_core::app_state::AppState;
+use hypertype_core::{commands, hotkeys, logging};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
 
-use app_state::AppState;
+use shortcuts::TauriHotkeys;
 
 /// Set when the user explicitly quits, so the tray-keep-alive guard knows to
 /// let the process exit.
@@ -95,14 +88,8 @@ fn build_tray(app: &AppHandle, state: Arc<AppState>) -> tauri::Result<()> {
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "toggle" => {
                 let state = app.state::<Arc<AppState>>();
-                let now = !state.enabled.fetch_xor(true, Ordering::Relaxed);
+                let now = commands::toggle_enabled(state.inner(), &TauriHotkeys(app));
                 let _ = toggle_item.set_checked(now);
-                // Pausing must release OS hotkeys, and the choice must survive
-                // a restart because the tray is the only UI when minimized.
-                crate::shortcuts::sync_enabled(app, state.inner(), now);
-                if let Err(e) = crate::ipc::persist_settings(state.inner()) {
-                    crate::logging::error(&format!("failed to persist enabled toggle: {e}"));
-                }
                 // If the manager window is open, keep its switch in sync.
                 let _ = app.emit("enabled-changed", now);
             }
@@ -129,22 +116,12 @@ fn build_tray(app: &AppHandle, state: Arc<AppState>) -> tauri::Result<()> {
 
 fn main() {
     logging::init();
-    std::panic::set_hook(Box::new(|info| {
-        let location = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
-        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
-            s.to_string()
-        } else if let Some(s) = info.payload().downcast_ref::<String>() {
-            s.clone()
-        } else {
-            "unknown".to_string()
-        };
-        crate::logging::error(&format!("PANIC at {location}: {payload}"));
-    }));
+    hypertype_core::install_panic_logger();
 
     tauri::Builder::default()
         // single-instance must be registered first.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            crate::logging::info("single-instance triggered: focus requested from second process");
+            logging::info("single-instance triggered: focus requested from second process");
             open_main_window(app);
         }))
         .plugin(tauri_plugin_autostart::init(
@@ -175,36 +152,17 @@ fn main() {
             ipc::restart_elevated
         ])
         .setup(move |app| {
-            crate::logging::info("Tauri setup callback invoked");
+            logging::info("Tauri setup callback invoked");
 
             // Storage, state, engine, and hook start here — after the
             // single-instance plugin has claimed primary. A rejected secondary
             // process exits inside the plugin's own setup, before this runs,
             // so it never starts a second engine or keyboard hook.
-            let data_path = storage::data_file_path();
-            let snippets = storage::load_or_default(&data_path);
-            let settings = storage::load_settings(&storage::settings_file_path());
-            expansion::set_insert_mode(settings.insert_mode);
-            expansion::set_wpm(settings.wpm);
-            expansion::set_paste_combo(settings.paste_combo);
-            expansion::set_restore_delay_ms(settings.restore_delay_ms);
-            expansion::set_auto_paste_words(settings.auto_paste_words);
-            let state = Arc::new(AppState {
-                snippets: RwLock::new(snippets),
-                // Restore the user's last pause/resume choice instead of
-                // silently re-enabling the engine on every launch.
-                enabled: AtomicBool::new(settings.enabled),
-                data_path,
-            });
+            let state = hypertype_core::start();
             app.manage(state.clone());
 
-            // Engine + keyboard hook start before any window is shown:
-            // expansion runs regardless of whether a window is ever opened.
-            let tx = engine::start(state.clone());
-            keyboard::start(tx);
-
             build_tray(app.handle(), state.clone())?;
-            crate::logging::info("Tray built successfully");
+            logging::info("Tray built successfully");
             // Registering shortcuts marshals each Win32 RegisterHotKey call
             // onto the main thread and blocks waiting for it to run. The
             // event loop isn't pumping yet during `setup`, so doing this
@@ -213,7 +171,7 @@ fn main() {
             let handle = app.handle().clone();
             let register_state = state.clone();
             std::thread::spawn(move || {
-                shortcuts::register_all(&handle, &register_state);
+                hotkeys::register_all(&TauriHotkeys(&handle), &register_state);
             });
             if std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") {
@@ -230,27 +188,27 @@ fn main() {
         .expect("failed to build HyperType")
         .run(|_app, event| match event {
             RunEvent::ExitRequested { api, .. } => {
-                crate::logging::info("RunEvent::ExitRequested received");
+                logging::info("RunEvent::ExitRequested received");
                 // Keep running in the tray when the last window closes, unless
                 // the user actually chose Quit.
                 if !QUIT.load(Ordering::SeqCst) {
                     api.prevent_exit();
-                    crate::logging::info("prevented exit, running in tray");
+                    logging::info("prevented exit, running in tray");
                 }
             }
             RunEvent::Exit => {
-                crate::logging::info("RunEvent::Exit received");
+                logging::info("RunEvent::Exit received");
             }
             RunEvent::Ready => {
-                crate::logging::info("RunEvent::Ready received");
+                logging::info("RunEvent::Ready received");
             }
             RunEvent::Resumed => {
-                crate::logging::info("RunEvent::Resumed received");
+                logging::info("RunEvent::Resumed received");
             }
             RunEvent::WindowEvent { label, event, .. } => {
-                crate::logging::info(&format!("RunEvent::WindowEvent [{label}]: {event:?}"));
+                logging::info(&format!("RunEvent::WindowEvent [{label}]: {event:?}"));
             }
             _ => {}
         });
-    crate::logging::info("main() exited");
+    logging::info("main() exited");
 }

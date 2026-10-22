@@ -175,7 +175,7 @@ impl Engine {
         // Shortcut combos (Ctrl+x, Win+x) are commands, not text. AltGr is
         // Ctrl+Alt and DOES produce characters, so only bail when Ctrl is held
         // without Alt.
-        if crate::shortcuts::try_match_chord_fallback(ev.vk, ctrl, alt, shift, win, state) {
+        if crate::hotkeys::try_match_chord_fallback(ev.vk, ctrl, alt, shift, win, state) {
             self.buffer.clear();
             return;
         }

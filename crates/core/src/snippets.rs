@@ -53,7 +53,7 @@ pub struct Snippets {
 }
 
 /// Canonical form for shortcut chords: lowercase, no spaces, `control` folded
-/// into `ctrl`. Must stay in sync with how `shortcuts::try_match_chord_fallback`
+/// into `ctrl`. Must stay in sync with how `hotkeys::try_match_chord_fallback`
 /// builds its expected chord.
 pub fn normalize_chord(trigger: &str) -> String {
     trigger
@@ -216,6 +216,10 @@ impl Snippets {
 
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 
     /// Snapshot in user order, for the UI list and for persistence.
