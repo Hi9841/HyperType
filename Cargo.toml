@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core"]
+members = ["crates/app","crates/core"]
 # The legacy Tauri adapter keeps its own lockfile until cutover
 # (see migration/PLAN.md).
 exclude = ["src-tauri"]
@@ -12,3 +12,16 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Optimize the UI framework in dev builds so `cargo run` stays responsive.
+# This makes the first dev build slower, not faster.
+[profile.dev.package]
+gpui-pre = { opt-level = 3 }
+gpui-component = { opt-level = 3 }
+gpui-kit = { opt-level = 3 }
+gpui-kit-assets = { opt-level = 3 }
+gpui-pre-macros = { opt-level = 3 }
+gpui-pre-platform = { opt-level = 3 }
+rustybuzz = { opt-level = 3 }
+taffy = { opt-level = 3 }
+ttf-parser = { opt-level = 3 }
