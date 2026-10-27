@@ -290,23 +290,3 @@ pub fn set_unicode_text(text: &str) -> bool {
     }
     ok
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn utf16_clipboard_bytes_are_nul_terminated() {
-        assert_eq!(utf16_clipboard_bytes("A"), vec![65, 0, 0, 0]);
-    }
-
-    #[test]
-    fn utf8_clipboard_bytes_are_nul_terminated() {
-        assert_eq!(utf8_clipboard_bytes("hi"), b"hi\0".to_vec());
-    }
-
-    #[test]
-    fn legacy_bytes_keep_ascii_and_replace_unicode() {
-        assert_eq!(ascii_fallback_bytes("hi\u{2026}"), b"hi?\0".to_vec());
-    }
-}

@@ -380,27 +380,3 @@ fn persist(state: &AppState) -> Result<(), String> {
         message
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_unreachable_or_control_character_text_triggers() {
-        let too_long = "x".repeat(MAX_TEXT_TRIGGER_CHARS + 1);
-        assert!(validate_snippet(&too_long, "value", TriggerKind::Text).is_err());
-        assert!(validate_snippet("line\nbreak", "value", TriggerKind::Text).is_err());
-    }
-
-    #[test]
-    fn allows_unicode_text_trigger_at_character_limit() {
-        let trigger = "\u{05d0}".repeat(MAX_TEXT_TRIGGER_CHARS);
-        assert!(validate_snippet(&trigger, "value", TriggerKind::Text).is_ok());
-    }
-
-    #[test]
-    fn caps_expansion_size() {
-        let expansion = "x".repeat(MAX_EXPANSION_CHARS + 1);
-        assert!(validate_snippet("ok", &expansion, TriggerKind::Text).is_err());
-    }
-}

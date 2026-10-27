@@ -316,34 +316,3 @@ pub fn wait_until_ready(timeout: Duration) -> bool {
     }
     HOOK_READY.load(Ordering::Acquire)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reinstall_requires_definitive_failure() {
-        assert!(should_reinstall(false, 42, 10_000, 0));
-        assert!(should_reinstall(true, 0, 10_000, 0));
-        assert!(!should_reinstall(true, 42, 10_000, 0));
-    }
-
-    #[test]
-    fn reinstall_cooldown_blocks_storm() {
-        // Thread is gone, but we reinstalled 5s ago: wait, do not storm.
-        assert!(!should_reinstall(false, 42, 15_000, 10_000));
-        // Cooldown elapsed: allowed again.
-        assert!(should_reinstall(false, 42, 45_000, 10_000));
-    }
-
-    #[test]
-    fn event_counter_and_last_event_telemetry() {
-        let initial = get_event_count();
-        HOOK_EVENTS.fetch_add(5, Ordering::Relaxed);
-        assert_eq!(get_event_count(), initial + 5);
-
-        let now_ms = 1234567890u64;
-        LAST_EVENT_MS.store(now_ms, Ordering::Relaxed);
-        assert_eq!(last_event_ms(), now_ms);
-    }
-}

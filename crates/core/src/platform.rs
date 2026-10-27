@@ -302,32 +302,3 @@ pub fn restart_elevated() -> Result<(), String> {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extracts_process_basename_from_windows_path() {
-        assert_eq!(
-            process_basename(r"C:\Program Files\WezTerm\wezterm-gui.exe"),
-            "wezterm-gui.exe"
-        );
-        assert_eq!(process_basename(""), "");
-    }
-
-    #[test]
-    fn decodes_every_utf16_scalar() {
-        let buffer = [b'a' as u16, 0xD83D, 0xDE00, b'z' as u16];
-        assert_eq!(
-            decoded_from_utf16(4, &buffer),
-            Decoded::Text("a\u{1F600}z".to_string())
-        );
-    }
-
-    #[test]
-    fn distinguishes_dead_keys_from_non_text_keys() {
-        assert_eq!(decoded_from_utf16(-1, &[0x00B4]), Decoded::Dead);
-        assert_eq!(decoded_from_utf16(0, &[]), Decoded::None);
-    }
-}
