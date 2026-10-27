@@ -518,11 +518,20 @@ export default function App() {
     rowHeight = (e.currentTarget.closest("div.studio-item") as HTMLElement)?.offsetHeight ?? 52;
     const startY = e.clientY;
     const count = snippets()?.length ?? 0;
+    // Capture the pointer so the release is delivered even when the cursor
+    // leaves the narrow window mid-drag.
+    const grip = e.currentTarget;
+    grip.setPointerCapture(e.pointerId);
     setDragIdx(index);
     setDropIdx(index);
     setDragY(0);
 
     const onMove = (ev: PointerEvent) => {
+      // The button was released somewhere we never heard about: end the drag.
+      if (ev.buttons === 0) {
+        finish(true);
+        return;
+      }
       const dy = ev.clientY - startY;
       setDragY(dy);
       setDropIdx(Math.min(count - 1, Math.max(0, index + Math.round(dy / rowHeight))));
@@ -531,6 +540,8 @@ export default function App() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("blur", onCancel);
+      if (grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId);
       const to = dropIdx();
       setDragIdx(null);
       setDragY(0);
@@ -541,6 +552,7 @@ export default function App() {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("blur", onCancel);
   }
 
   function gripKeys(e: KeyboardEvent, index: number) {
