@@ -46,12 +46,19 @@ struct SuffixNode {
 /// cuts the index build time and resident memory.
 struct SuffixTrie {
     nodes: Vec<SuffixNode>,
+    /// Terminal nodes cleared by `remove` since the last full build. Their
+    /// path nodes stay in the arena; a rebuild reclaims them.
+    stale: usize,
 }
+
+/// Rebuild the trie once this many removed triggers have left dead nodes.
+const STALE_REBUILD_LIMIT: usize = 1024;
 
 impl Default for SuffixTrie {
     fn default() -> Self {
         SuffixTrie {
             nodes: vec![SuffixNode::default()],
+            stale: 0,
         }
     }
 }
@@ -63,6 +70,27 @@ impl SuffixTrie {
             .binary_search_by_key(&ch, |&(c, _)| c)
             .ok()
             .map(|i| children[i].1)
+    }
+
+    fn insert(&mut self, trigger: &str) {
+        let mut node = 0;
+        for ch in trigger.chars().rev() {
+            node = self.child_or_insert(node, ch);
+        }
+        self.nodes[node as usize].trigger = Some(trigger.to_owned());
+    }
+
+    fn remove(&mut self, trigger: &str) {
+        let mut node = 0;
+        for ch in trigger.chars().rev() {
+            let Some(next) = self.child(node, ch) else {
+                return;
+            };
+            node = next;
+        }
+        if self.nodes[node as usize].trigger.take().is_some() {
+            self.stale += 1;
+        }
     }
 
     fn child_or_insert(&mut self, node: u32, ch: char) -> u32 {
@@ -138,20 +166,41 @@ impl Snippets {
 
     fn rebuild_suffixes(&mut self) {
         let mut trie = SuffixTrie::default();
-        let mut shortcut_index = HashMap::new();
         for (trigger, entry) in &self.map {
             if entry.kind == TriggerKind::Text {
-                let mut node = 0;
-                for ch in trigger.chars().rev() {
-                    node = trie.child_or_insert(node, ch);
-                }
-                trie.nodes[node as usize].trigger = Some(trigger.clone());
-            } else {
-                shortcut_index.insert(normalize_chord(trigger), trigger.clone());
+                trie.insert(trigger);
             }
         }
         self.suffixes = trie;
-        self.shortcut_index = shortcut_index;
+        self.rebuild_shortcut_index();
+    }
+
+    fn rebuild_shortcut_index(&mut self) {
+        self.shortcut_index = self
+            .map
+            .iter()
+            .filter(|(_, entry)| entry.kind == TriggerKind::Shortcut)
+            .map(|(trigger, _)| (normalize_chord(trigger), trigger.clone()))
+            .collect();
+    }
+
+    /// Bring the indexes in line with one trigger that changed kind or
+    /// presence, without walking the whole library. Call after `map` is
+    /// updated.
+    fn reindex(&mut self, trigger: &str, old: Option<TriggerKind>, new: Option<TriggerKind>) {
+        let was_text = old == Some(TriggerKind::Text);
+        let is_text = new == Some(TriggerKind::Text);
+        if was_text && !is_text {
+            self.suffixes.remove(trigger);
+        } else if is_text && !was_text {
+            self.suffixes.insert(trigger);
+        }
+        if old == Some(TriggerKind::Shortcut) || new == Some(TriggerKind::Shortcut) {
+            self.rebuild_shortcut_index();
+        }
+        if self.suffixes.stale >= STALE_REBUILD_LIMIT {
+            self.rebuild_suffixes();
+        }
     }
 
     fn upsert(&mut self, trigger: String, expansion: String, kind: TriggerKind) {
@@ -167,8 +216,9 @@ impl Snippets {
     pub fn insert(&mut self, trigger: String, expansion: String, kind: TriggerKind) {
         // A brand-new trigger appends to the list; editing an existing one
         // keeps its position.
-        self.upsert(trigger, expansion, kind);
-        self.rebuild_suffixes();
+        let old = self.get_kind(&trigger);
+        self.upsert(trigger.clone(), expansion, kind);
+        self.reindex(&trigger, old, Some(kind));
     }
 
     /// Insert a batch while rebuilding the suffix index only once. Imports can
@@ -198,6 +248,7 @@ impl Snippets {
         let old_kind = old.kind;
         self.map
             .insert(new_trigger.clone(), Entry { expansion, kind });
+        let reindexed = new_trigger.clone();
 
         if let Some(slot) = self.order.iter_mut().find(|t| t.as_str() == old_trigger) {
             *slot = new_trigger;
@@ -205,7 +256,8 @@ impl Snippets {
             self.order.push(new_trigger);
         }
 
-        self.rebuild_suffixes();
+        self.reindex(old_trigger, Some(old_kind), None);
+        self.reindex(&reindexed, None, Some(kind));
         Ok(old_kind)
     }
 
@@ -214,7 +266,9 @@ impl Snippets {
         if removed.is_some() {
             self.order.retain(|t| t != trigger);
         }
-        self.rebuild_suffixes();
+        if let Some(kind) = removed {
+            self.reindex(trigger, Some(kind), None);
+        }
         removed
     }
 
