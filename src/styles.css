@@ -371,7 +371,7 @@ button {
   border: 1px solid transparent;
   border-radius: 8px;
   cursor: pointer;
-  transition: background-color var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out);
+  transition: background-color var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out), transform var(--fast) var(--ease-out);
 }
 .studio-item:hover {
   background: var(--surface-3);
@@ -1113,7 +1113,7 @@ button {
   padding: 3px 8px;
   border-radius: 5px;
   cursor: pointer;
-  transition: background-color var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out), color var(--fast) var(--ease-out);
+  transition: background-color var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out), color var(--fast) var(--ease-out), opacity var(--fast) var(--ease-out);
 }
 .btn-check-updates:hover:enabled {
   background: var(--field);
@@ -1202,7 +1202,7 @@ button {
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background-color var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out), color var(--fast) var(--ease-out);
+  transition: background-color var(--fast) var(--ease-out), border-color var(--fast) var(--ease-out), color var(--fast) var(--ease-out), opacity var(--fast) var(--ease-out);
   white-space: nowrap;
 }
 
