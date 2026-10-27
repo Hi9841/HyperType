@@ -36,9 +36,9 @@ struct Entry {
 struct SuffixNode {
     /// Sorted by char: lookup is a binary search over a short slice.
     children: Vec<(char, u32)>,
-    /// Trigger key in `Snippets::map`. Kept only at terminal nodes, so lookup
-    /// remains allocation-free until an expansion is cloned for delivery.
-    trigger: Option<String>,
+    /// A trigger ends here. The path from the root is the trigger reversed,
+    /// so `match_suffix` rebuilds the key from the buffer on a hit.
+    terminal: bool,
 }
 
 /// Reverse-character trie stored as one flat arena. Node 0 is the root.
@@ -77,7 +77,7 @@ impl SuffixTrie {
         for ch in trigger.chars().rev() {
             node = self.child_or_insert(node, ch);
         }
-        self.nodes[node as usize].trigger = Some(trigger.to_owned());
+        self.nodes[node as usize].terminal = true;
     }
 
     fn remove(&mut self, trigger: &str) {
@@ -88,7 +88,7 @@ impl SuffixTrie {
             };
             node = next;
         }
-        if self.nodes[node as usize].trigger.take().is_some() {
+        if std::mem::take(&mut self.nodes[node as usize].terminal) {
             self.stale += 1;
         }
     }
@@ -344,12 +344,10 @@ impl Snippets {
             node = next;
             let len = offset + 1;
             let start = buffer.len() - len;
-            if start == 0 || !buffer[start - 1].is_alphanumeric() {
-                if let Some(entry) = self.suffixes.nodes[node as usize]
-                    .trigger
-                    .as_deref()
-                    .and_then(|trigger| self.map.get(trigger))
-                {
+            let at_boundary = start == 0 || !buffer[start - 1].is_alphanumeric();
+            if at_boundary && self.suffixes.nodes[node as usize].terminal {
+                let trigger: String = buffer[start..].iter().collect();
+                if let Some(entry) = self.map.get(&trigger) {
                     matched = Some((len, entry.expansion.clone()));
                 }
             }
