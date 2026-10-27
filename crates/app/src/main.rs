@@ -1,13 +1,20 @@
 // Hide the console window in release; keep it in debug for logs.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod assets;
+mod autostart;
+mod chord;
+mod editor;
 mod events;
 mod hotkeys;
 mod instance;
 mod manager;
+mod settings;
 mod shell;
 mod theme;
+mod tokens;
 mod tray;
+mod widgets;
 
 use gpui_kit::*;
 use hypertype_core::logging;
@@ -36,12 +43,13 @@ fn main() {
     let minimized = std::env::args().any(|a| a == "--minimized");
 
     application()
-        .with_assets(assets::Assets)
+        .with_assets(crate::assets::Assets)
         // The tray keeps HyperType alive; closing the window must not quit.
         .with_quit_mode(QuitMode::Explicit)
         .run(move |cx| {
             gpui_kit::init(cx);
             theme::init(cx);
+            manager::bind_keys(cx);
 
             // The tray and hotkey windows must live on this thread's message loop.
             let hotkeys = match GlobalHotkeys::new(state.clone()) {
