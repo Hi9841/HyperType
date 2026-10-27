@@ -191,22 +191,10 @@ Outputs:
 
 GitHub Actions publishes tagged releases. Keep the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` identical, then push the matching `v<version>` tag.
 
-The repository must define `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets. The release workflow runs the unit tests and the live-window expansion tests. Then it builds the signed NSIS installer. It uploads the installer, the signature, and the `latest.json` file for the in-app updater.
+The repository must define `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets. The release workflow builds the signed NSIS installer. It uploads the installer, the signature, and the `latest.json` file for the in-app updater.
 
 ---
 
-## Testing & Verification
-
-Run the comprehensive Rust unit and integration test suite:
-
-```powershell
-cd src-tauri
-cargo test
-```
-
-All 63 unit tests across engine state, snippet reordering, modifier tracking, and clipboard restoration will execute.
-
----
 
 ## License
 
