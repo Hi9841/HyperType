@@ -34,10 +34,49 @@ struct Entry {
 
 #[derive(Default)]
 struct SuffixNode {
-    children: HashMap<char, SuffixNode>,
+    /// Sorted by char: lookup is a binary search over a short slice.
+    children: Vec<(char, u32)>,
     /// Trigger key in `Snippets::map`. Kept only at terminal nodes, so lookup
     /// remains allocation-free until an expansion is cloned for delivery.
     trigger: Option<String>,
+}
+
+/// Reverse-character trie stored as one flat arena. Node 0 is the root.
+/// One `Vec` of nodes replaces a heap-allocated hash map per node, which
+/// cuts the index build time and resident memory.
+struct SuffixTrie {
+    nodes: Vec<SuffixNode>,
+}
+
+impl Default for SuffixTrie {
+    fn default() -> Self {
+        SuffixTrie {
+            nodes: vec![SuffixNode::default()],
+        }
+    }
+}
+
+impl SuffixTrie {
+    fn child(&self, node: u32, ch: char) -> Option<u32> {
+        let children = &self.nodes[node as usize].children;
+        children
+            .binary_search_by_key(&ch, |&(c, _)| c)
+            .ok()
+            .map(|i| children[i].1)
+    }
+
+    fn child_or_insert(&mut self, node: u32, ch: char) -> u32 {
+        let next = self.nodes.len() as u32;
+        let children = &mut self.nodes[node as usize].children;
+        match children.binary_search_by_key(&ch, |&(c, _)| c) {
+            Ok(i) => children[i].1,
+            Err(i) => {
+                children.insert(i, (ch, next));
+                self.nodes.push(SuffixNode::default());
+                next
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -46,7 +85,7 @@ pub struct Snippets {
     /// User-visible order of triggers. Matching never touches this; it only
     /// drives `list()` (the UI and the persisted file order).
     order: Vec<String>,
-    suffixes: SuffixNode,
+    suffixes: SuffixTrie,
     /// Normalized chord -> trigger. Lets the hook fallback match a shortcut in
     /// O(1) without cloning the whole snippet list on every Ctrl/Alt/Win key.
     shortcut_index: HashMap<String, String>,
@@ -77,7 +116,7 @@ impl Snippets {
         let mut s = Snippets {
             map,
             order,
-            suffixes: SuffixNode::default(),
+            suffixes: SuffixTrie::default(),
             shortcut_index: HashMap::new(),
         };
         s.rebuild_suffixes();
@@ -98,20 +137,20 @@ impl Snippets {
     }
 
     fn rebuild_suffixes(&mut self) {
-        let mut root = SuffixNode::default();
+        let mut trie = SuffixTrie::default();
         let mut shortcut_index = HashMap::new();
         for (trigger, entry) in &self.map {
             if entry.kind == TriggerKind::Text {
-                let mut node = &mut root;
+                let mut node = 0;
                 for ch in trigger.chars().rev() {
-                    node = node.children.entry(ch).or_default();
+                    node = trie.child_or_insert(node, ch);
                 }
-                node.trigger = Some(trigger.clone());
+                trie.nodes[node as usize].trigger = Some(trigger.clone());
             } else {
                 shortcut_index.insert(normalize_chord(trigger), trigger.clone());
             }
         }
-        self.suffixes = root;
+        self.suffixes = trie;
         self.shortcut_index = shortcut_index;
     }
 
@@ -242,17 +281,17 @@ impl Snippets {
             return None;
         }
 
-        let mut node = &self.suffixes;
+        let mut node = 0;
         let mut matched = None;
-        for (offset, ch) in buffer.iter().rev().enumerate() {
-            let Some(next) = node.children.get(ch) else {
+        for (offset, &ch) in buffer.iter().rev().enumerate() {
+            let Some(next) = self.suffixes.child(node, ch) else {
                 break;
             };
             node = next;
             let len = offset + 1;
             let start = buffer.len() - len;
             if start == 0 || !buffer[start - 1].is_alphanumeric() {
-                if let Some(entry) = node
+                if let Some(entry) = self.suffixes.nodes[node as usize]
                     .trigger
                     .as_deref()
                     .and_then(|trigger| self.map.get(trigger))
