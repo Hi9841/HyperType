@@ -3235,7 +3235,7 @@ dependencies = [
 
 [[package]]
 name = "hypertype"
-version = "1.1.6"
+version = "1.1.7"
 dependencies = [
  "async-channel",
  "embed-resource",
@@ -3249,7 +3249,7 @@ dependencies = [
 
 [[package]]
 name = "hypertype-core"
-version = "1.1.6"
+version = "1.1.7"
 dependencies = [
  "serde",
  "serde_json",
