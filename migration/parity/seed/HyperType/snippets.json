@@ -1,0 +1,27 @@
+[
+  {
+    "trigger": "gm",
+    "expansion": "Good morning",
+    "kind": "text"
+  },
+  {
+    "trigger": "addr",
+    "expansion": "123 Main Street, Springfield",
+    "kind": "text"
+  },
+  {
+    "trigger": "sig",
+    "expansion": "Best regards,\nYour Name",
+    "kind": "text"
+  },
+  {
+    "trigger": "brb",
+    "expansion": "Be right back",
+    "kind": "text"
+  },
+  {
+    "trigger": "omw",
+    "expansion": "On my way",
+    "kind": "text"
+  }
+]

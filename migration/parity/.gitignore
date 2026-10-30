@@ -1,0 +1,7 @@
+node_modules/
+.browser-profile/
+.run-appdata/
+.validate-appdata/
+validation/
+gpui/
+diff/

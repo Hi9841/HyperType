@@ -1,0 +1,3 @@
+step	timestamp	wall_clock_min	tokens	subagents	model
+0	2026-10-30T23:40Z	unknown	unknown	0	claude-opus-5-5
+1	2026-10-30T23:59Z	unknown	unknown	1	grok-4.5-high

@@ -1,0 +1,8 @@
+{
+  "insert_mode": "auto",
+  "wpm": 600,
+  "paste_combo": "ctrl_v",
+  "restore_delay_ms": 5000,
+  "auto_paste_words": 15,
+  "enabled": true
+}

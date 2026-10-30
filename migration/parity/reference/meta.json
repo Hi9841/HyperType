@@ -1,0 +1,29 @@
+{
+  "scale": 1,
+  "channel": "chrome-cdp",
+  "browserVersion": "155.0.8059.85",
+  "viewport": {
+    "width": 960,
+    "height": 640
+  },
+  "deviceScaleFactor": 1,
+  "date": "2026-10-30T22:26:38.786Z",
+  "states": [
+    "default-selected",
+    "row-hover",
+    "new-snippet",
+    "shortcut-mode-empty",
+    "shortcut-recording",
+    "search-filter",
+    "search-no-match",
+    "empty-library",
+    "settings-modal",
+    "tokens-modal",
+    "save-disabled"
+  ],
+  "gitCommit": "137ac571c0c8f360a8d7db7340fbd81975edea59",
+  "gitDescribe": "v1.1.6-15-g137ac57-dirty",
+  "srcDirty": false,
+  "infiniteAnimFreezeMs": 0,
+  "note": "Edge missing; Chrome/Chromium CDP fallback; rebuilt dist before capture; animations settled"
+}
