@@ -1,23 +1,20 @@
 // Hide the console window in release; keep it in debug for logs.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// S1 foundation exports widgets and Studio/Editor APIs for later slices.
+#![allow(dead_code)]
 
 mod assets;
 mod autostart;
 mod chord;
-mod editor;
 mod events;
 mod hotkeys;
 mod instance;
-mod manager;
 #[cfg(feature = "parity")]
 mod parity;
-mod settings;
 mod shell;
-mod theme;
-mod tokens;
 mod tray;
+mod ui;
 mod updater;
-mod widgets;
 
 use gpui_kit::*;
 use hypertype_core::logging;
@@ -62,8 +59,7 @@ fn main() {
         .with_quit_mode(QuitMode::Explicit)
         .run(move |cx| {
             gpui_kit::init(cx);
-            theme::init(cx);
-            manager::bind_keys(cx);
+            ui::init_theme(cx);
 
             // The tray and hotkey windows must live on this thread's message loop.
             let hotkeys = match GlobalHotkeys::new(state.clone()) {
@@ -88,7 +84,7 @@ fn main() {
             .detach();
 
             if !minimized {
-                shell::open_window(cx);
+                ui::open_window(cx);
             }
             logging::info("HyperType ready");
         });

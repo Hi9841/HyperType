@@ -11,13 +11,27 @@ import {
   REPO_ROOT,
   SEED_APPDATA,
 } from "./paths.ts";
-import { diffPair, formatSummary } from "./diff.ts";
+import { diffPair, formatSummary, parseRegion } from "./diff.ts";
 import { run, runText, sleep, start } from "./node-utils.ts";
+
+function argValue(flag: string): string | undefined {
+  const idx = process.argv.indexOf(flag);
+  if (idx < 0) return undefined;
+  return process.argv[idx + 1];
+}
 
 function statesFromArgs(): string[] {
   const dash = process.argv.indexOf("--");
   const raw = dash >= 0 ? process.argv.slice(dash + 1) : process.argv.slice(2);
-  const states = raw.filter((a) => !a.startsWith("-"));
+  const skipNext = new Set<number>();
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === "--region" || raw[i] === "--ref-dir" || raw[i] === "--cmp-dir" || raw[i] === "--out-dir") {
+      skipNext.add(i + 1);
+    }
+  }
+  const states = raw.filter(
+    (a, i) => !a.startsWith("-") && !skipNext.has(i),
+  );
   return states.length > 0 ? states : ["default-selected"];
 }
 
@@ -127,6 +141,7 @@ async function runState(
 
 async function main() {
   const states = statesFromArgs();
+  const region = parseRegion(argValue("--region"));
   mkdirSync(GPUI_DIR, { recursive: true });
   mkdirSync(DIFF_DIR, { recursive: true });
 
@@ -137,14 +152,22 @@ async function main() {
   const results = [];
   for (const state of states) {
     await runState(state, exe, appdata);
+    const outName = region
+      ? `${state}-r${region.x}_${region.y}_${region.w}_${region.h}.png`
+      : `${state}.png`;
     const result = diffPair(
       join(PARITY_ROOT, "reference", `${state}.png`),
       join(GPUI_DIR, `${state}.png`),
-      join(DIFF_DIR, `${state}.png`),
+      join(DIFF_DIR, outName),
+      undefined,
+      region,
     );
     results.push(result);
+    const regionLabel = region
+      ? ` region ${region.x},${region.y},${region.w},${region.h}`
+      : "";
     console.log(
-      `diff ${state}: detail ${result.percent.toFixed(3)}% fill ${result.fillPercent.toFixed(3)}% ${result.pass ? "PASS" : "FAIL"}` +
+      `diff ${state}${regionLabel}: detail ${result.percent.toFixed(3)}% fill ${result.fillPercent.toFixed(3)}% ${result.pass ? "PASS" : "FAIL"}` +
         (result.error ? ` (${result.error})` : ""),
     );
   }

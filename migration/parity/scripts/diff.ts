@@ -36,6 +36,8 @@ function loadPng(path: string): PNG {
   return PNG.sync.read(readFileSync(path));
 }
 
+export type Region = { x: number; y: number; w: number; h: number };
+
 export type DiffResult = {
   state: string;
   width: number;
@@ -54,9 +56,47 @@ export type DiffResult = {
   /** True when both metrics are under their pass thresholds. */
   pass: boolean;
   error?: string;
+  /** Crop rectangle when `--region x,y,w,h` was used. */
+  region?: Region;
 };
 
-function emptyResult(state: string, error: string): DiffResult {
+/** Parse `x,y,w,h` from `--region`. */
+export function parseRegion(raw: string | undefined): Region | undefined {
+  if (!raw) return undefined;
+  const parts = raw.split(",").map((p) => Number(p.trim()));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n) || n < 0)) {
+    throw new Error(`invalid --region '${raw}' (expected x,y,w,h)`);
+  }
+  const [x, y, w, h] = parts as [number, number, number, number];
+  if (w <= 0 || h <= 0) {
+    throw new Error(`invalid --region '${raw}' (w and h must be > 0)`);
+  }
+  return { x, y, w, h };
+}
+
+/** Crop a PNG to an inclusive pixel rectangle clipped to image bounds. */
+export function cropPng(src: PNG, region: Region): PNG {
+  const x0 = Math.max(0, Math.floor(region.x));
+  const y0 = Math.max(0, Math.floor(region.y));
+  const x1 = Math.min(src.width, x0 + Math.floor(region.w));
+  const y1 = Math.min(src.height, y0 + Math.floor(region.h));
+  const w = Math.max(0, x1 - x0);
+  const h = Math.max(0, y1 - y0);
+  const out = new PNG({ width: w, height: h });
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const si = ((y0 + y) * src.width + (x0 + x)) * 4;
+      const di = (y * w + x) * 4;
+      out.data[di] = src.data[si]!;
+      out.data[di + 1] = src.data[si + 1]!;
+      out.data[di + 2] = src.data[si + 2]!;
+      out.data[di + 3] = src.data[si + 3]!;
+    }
+  }
+  return out;
+}
+
+function emptyResult(state: string, error: string, region?: Region): DiffResult {
   return {
     state,
     width: 0,
@@ -70,6 +110,7 @@ function emptyResult(state: string, error: string): DiffResult {
     okSize: false,
     pass: false,
     error,
+    region,
   };
 }
 
@@ -158,17 +199,18 @@ export function diffPair(
   cmpPath: string,
   diffPath: string,
   detailThreshold = DETAIL_PIXEL_THRESHOLD,
+  region?: Region,
 ): DiffResult {
   const state = basename(refPath, ".png");
   if (!existsSync(refPath)) {
-    return emptyResult(state, `missing reference: ${refPath}`);
+    return emptyResult(state, `missing reference: ${refPath}`, region);
   }
   if (!existsSync(cmpPath)) {
-    return emptyResult(state, `missing compare image: ${cmpPath}`);
+    return emptyResult(state, `missing compare image: ${cmpPath}`, region);
   }
 
-  const ref = loadPng(refPath);
-  const cmp = loadPng(cmpPath);
+  let ref = loadPng(refPath);
+  let cmp = loadPng(cmpPath);
   if (ref.width !== cmp.width || ref.height !== cmp.height) {
     const msg = `size mismatch for ${state}: reference ${ref.width}x${ref.height} vs compare ${cmp.width}x${cmp.height}`;
     console.error(msg);
@@ -185,7 +227,13 @@ export function diffPair(
       okSize: false,
       pass: false,
       error: msg,
+      region,
     };
+  }
+
+  if (region) {
+    ref = cropPng(ref, region);
+    cmp = cropPng(cmp, region);
   }
 
   const detailPng = new PNG({ width: ref.width, height: ref.height });
@@ -221,6 +269,7 @@ export function diffPair(
     fillPercent: fill.percent,
     okSize: true,
     pass,
+    region,
   };
 }
 
@@ -238,7 +287,10 @@ export function formatSummary(results: DiffResult[]): string {
       ? `${r.fillMismatched}/${r.fillTotal}`
       : "-";
     const pass = r.error ? "ERROR" : r.pass ? "PASS" : "FAIL";
-    const note = r.error ?? "";
+    const regionNote = r.region
+      ? `region ${r.region.x},${r.region.y},${r.region.w},${r.region.h}`
+      : "";
+    const note = [r.error, regionNote].filter(Boolean).join("; ");
     lines.push(
       `| ${r.state} | ${size} | ${detailPct}% | ${detailPx} | ${fillPct}% | ${fillBlocks} | ${pass} | ${note} |`,
     );
@@ -250,6 +302,7 @@ function main() {
   const refDir = argValue("--ref-dir") ?? REFERENCE_DIR;
   const cmpDir = argValue("--cmp-dir") ?? GPUI_DIR;
   const outDir = argValue("--out-dir") ?? DIFF_DIR;
+  const region = parseRegion(argValue("--region"));
   const positional = process.argv
     .slice(2)
     .filter((a) => !a.startsWith("-") && !a.includes("\\") && !a.includes("/"));
@@ -282,15 +335,23 @@ function main() {
   const results: DiffResult[] = [];
   let failed = false;
   for (const state of states) {
+    const outName = region
+      ? `${state}-r${region.x}_${region.y}_${region.w}_${region.h}.png`
+      : `${state}.png`;
     const result = diffPair(
       join(refDir, `${state}.png`),
       join(cmpDir, `${state}.png`),
-      join(outDir, `${state}.png`),
+      join(outDir, outName),
+      DETAIL_PIXEL_THRESHOLD,
+      region,
     );
     results.push(result);
     if (result.error || !result.pass) failed = true;
+    const regionLabel = region
+      ? ` region ${region.x},${region.y},${region.w},${region.h}`
+      : "";
     console.log(
-      `${state}: detail ${result.percent.toFixed(3)}% (${result.mismatched}/${result.total})` +
+      `${state}${regionLabel}: detail ${result.percent.toFixed(3)}% (${result.mismatched}/${result.total})` +
         ` fill ${result.fillPercent.toFixed(3)}% (${result.fillMismatched}/${result.fillTotal})` +
         ` ${result.pass ? "PASS" : "FAIL"}` +
         (result.error ? ` ERROR: ${result.error}` : ""),

@@ -1,0 +1,314 @@
+//! Root `Studio` entity: shared state + frozen API (RULEBOOK section 4).
+
+use std::sync::Arc;
+
+use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::*;
+use hypertype_core::app_state::AppState;
+use hypertype_core::commands::{self, SnippetView, Status};
+use hypertype_core::snippets::TriggerKind;
+
+use crate::autostart;
+use crate::shell::{self, Shell};
+use crate::ui::editor::Editor;
+use crate::ui::settings_modal::SettingsModal;
+use crate::ui::sidebar::Sidebar;
+use crate::ui::titlebar;
+use crate::ui::tokens;
+use crate::ui::tokens_modal::TokensModal;
+use crate::ui::update::{self, UpdateUi};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Modal {
+    Settings,
+    Tokens,
+}
+
+pub struct Studio {
+    pub state: Arc<AppState>,
+    pub status: Status,
+    pub snippets: Vec<SnippetView>,
+    pub autostart: bool,
+    pub selected: Option<String>,
+    pub creating_new: bool,
+    pub modal: Option<Modal>,
+    pub update: UpdateUi,
+    pub sidebar: Entity<Sidebar>,
+    pub editor: Entity<Editor>,
+    pub settings: Entity<SettingsModal>,
+    pub tokens: Entity<TokensModal>,
+    /// Parity: freeze infinite animations at t=0.
+    pub freeze_animations: bool,
+    did_initial_select: bool,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl Studio {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let state = cx.global::<Shell>().state.clone();
+        let freeze_animations = cfg!(feature = "parity");
+
+        let mut status = commands::status(&state);
+        if freeze_animations {
+            status = parity_mock_status(status);
+        }
+
+        let snippets = commands::snippets(&state);
+        let autostart = autostart::is_enabled();
+
+        let weak = cx.weak_entity();
+        let sidebar = cx.new(|cx| Sidebar::new(weak.clone(), cx));
+        let editor = cx.new(|cx| Editor::new(weak.clone(), cx));
+        let settings = cx.new(|cx| SettingsModal::new(weak.clone(), cx));
+        let tokens = cx.new(|cx| TokensModal::new(weak.clone(), cx));
+
+        let _subscriptions = vec![
+            // Tray toggle updates Shell; refresh status.enabled (App.tsx:191-195).
+            cx.observe_global::<Shell>(|this, cx| {
+                this.refetch_status(cx);
+            }),
+        ];
+
+        let mut this = Self {
+            state,
+            status,
+            snippets,
+            autostart,
+            selected: None,
+            creating_new: false,
+            modal: None,
+            update: UpdateUi::default(),
+            sidebar,
+            editor,
+            settings,
+            tokens,
+            freeze_animations,
+            did_initial_select: false,
+            _subscriptions,
+        };
+
+        // Initial selection once when the first non-empty list arrives (248-257).
+        this.maybe_initial_select(window, cx);
+
+        // Silent update check at window open (App.tsx:205).
+        let studio_entity = cx.entity();
+        update::check(&studio_entity, false, cx);
+
+        let _ = window;
+        this
+    }
+
+    fn maybe_initial_select(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.did_initial_select || self.snippets.is_empty() {
+            return;
+        }
+        if self.selected.is_some() || self.creating_new {
+            return;
+        }
+        self.did_initial_select = true;
+        let first = self.snippets[0].clone();
+        self.select_snippet(&first, window, cx);
+    }
+
+    pub fn refetch_status(&mut self, cx: &mut Context<Self>) {
+        let mut status = commands::status(&self.state);
+        if self.freeze_animations {
+            status = parity_mock_status(status);
+        }
+        self.status = status;
+        cx.notify();
+    }
+
+    pub fn refetch_snippets(&mut self, cx: &mut Context<Self>) {
+        self.snippets = commands::snippets(&self.state);
+        cx.notify();
+    }
+
+    /// Optimistic status edit (Settings).
+    pub fn patch_status(&mut self, f: impl FnOnce(&mut Status), cx: &mut Context<Self>) {
+        f(&mut self.status);
+        cx.notify();
+    }
+
+    /// App.tsx:225-234
+    pub fn select_snippet(
+        &mut self,
+        snippet: &SnippetView,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected = Some(snippet.trigger.clone());
+        self.creating_new = false;
+        self.editor.update(cx, |editor, cx| {
+            editor.load(snippet, window, cx);
+        });
+        cx.notify();
+    }
+
+    /// App.tsx:236-246
+    pub fn start_new_snippet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.creating_new = true;
+        self.selected = None;
+        self.editor.update(cx, |editor, cx| {
+            editor.clear_for_new(window, cx);
+        });
+        cx.notify();
+    }
+
+    /// App.tsx:454-480 — Editor owns busy and messages.
+    pub fn save_snippet(
+        &mut self,
+        old: Option<&str>,
+        trigger: &str,
+        expansion: String,
+        kind: TriggerKind,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let shell = cx.global::<Shell>();
+        match old {
+            None => commands::add_snippet(&shell.state, &shell.hotkeys, trigger, expansion, kind)?,
+            Some(old_trigger) => commands::edit_snippet(
+                &shell.state,
+                &shell.hotkeys,
+                old_trigger,
+                trigger,
+                expansion,
+                kind,
+            )?,
+        }
+        self.selected = Some(trigger.to_string());
+        self.creating_new = false;
+        self.refetch_snippets(cx);
+        self.refetch_status(cx);
+        Ok(())
+    }
+
+    /// App.tsx:482-499 — async confirm; OK deletes.
+    pub fn delete_snippet(
+        &mut self,
+        trigger: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let message = format!("Delete snippet \"{trigger}\"?");
+        let receiver = window.prompt(
+            PromptLevel::Warning,
+            &message,
+            None,
+            &["OK", "Cancel"],
+            cx,
+        );
+        let this = cx.entity().downgrade();
+        cx.spawn_in(window, async move |_, cx| {
+            let Ok(answer) = receiver.await else {
+                return;
+            };
+            if answer != 0 {
+                return;
+            }
+            this.update_in(cx, |this, window, cx| {
+                let shell = cx.global::<Shell>();
+                if let Err(e) = commands::remove_snippet(&shell.state, &shell.hotkeys, &trigger) {
+                    this.editor.update(cx, |editor, cx| {
+                        editor.set_error(e, cx);
+                    });
+                    return;
+                }
+                this.refetch_snippets(cx);
+                this.refetch_status(cx);
+                if this.selected.as_deref() == Some(trigger.as_str()) {
+                    match this.snippets.first().cloned() {
+                        Some(first) => this.select_snippet(&first, window, cx),
+                        None => this.start_new_snippet(window, cx),
+                    }
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// App.tsx:501-513 — optimistic reorder.
+    pub fn apply_reorder(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
+        if from == to || from >= self.snippets.len() || to >= self.snippets.len() {
+            return;
+        }
+        let moved = self.snippets.remove(from);
+        self.snippets.insert(to, moved);
+        let order: Vec<String> = self.snippets.iter().map(|s| s.trigger.clone()).collect();
+        cx.notify();
+        if commands::reorder_snippets(&self.state, order).is_err() {
+            self.refetch_snippets(cx);
+        }
+    }
+
+    /// App.tsx:275-285
+    pub fn toggle_enabled(&mut self, cx: &mut Context<Self>) {
+        shell::toggle_enabled(cx);
+        self.refetch_status(cx);
+    }
+
+    /// App.tsx:381-389
+    pub fn set_autostart(&mut self, on: bool, cx: &mut Context<Self>) {
+        let previous = self.autostart;
+        self.autostart = on;
+        cx.notify();
+        if let Err(e) = autostart::set_enabled(on) {
+            hypertype_core::logging::error(&format!("autostart: {e}"));
+            self.autostart = previous;
+            cx.notify();
+        }
+    }
+
+    pub fn set_modal(&mut self, modal: Option<Modal>, cx: &mut Context<Self>) {
+        self.modal = modal;
+        cx.notify();
+    }
+
+    /// App.tsx:437-452
+    pub fn insert_token(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.editor.update(cx, |editor, cx| {
+            editor.insert_token(token, window, cx);
+        });
+    }
+}
+
+fn parity_mock_status(mut status: Status) -> Status {
+    status.version = "1.1.5".into();
+    status.hook_events = 42;
+    status.hook_active = true;
+    status.hook_healthy = true;
+    status.is_elevated = false;
+    status
+}
+
+impl Render for Studio {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // .studio-app — styles.css:73-79
+        v_flex()
+            .size_full()
+            .bg(tokens::bg())
+            .text_color(tokens::ink())
+            .font_family(tokens::FONT_UI)
+            .text_size(px(tokens::ROOT_SIZE))
+            .line_height(relative(tokens::ROOT_LINE_HEIGHT))
+            .font_weight(FontWeight::NORMAL)
+            .child(titlebar::render(self, window, cx))
+            // .studio-workspace — styles.css:205-210
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
+                    .child(self.sidebar.clone())
+                    .child(self.editor.clone()),
+            )
+            .when(self.modal == Some(Modal::Settings), |this| {
+                this.child(self.settings.clone())
+            })
+            .when(self.modal == Some(Modal::Tokens), |this| {
+                this.child(self.tokens.clone())
+            })
+    }
+}
