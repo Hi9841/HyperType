@@ -79,6 +79,8 @@ pub const GROUPS: &[Group] = &[
     },
 ];
 
+type InsertTokenFn = dyn Fn(&str, &mut Window, &mut App);
+
 /// Open the catalog. `insert` runs with the chosen token; the dialog then
 /// closes.
 pub fn open(window: &mut Window, cx: &mut App, insert: impl Fn(&str, &mut Window, &mut App) + 'static) {
@@ -92,10 +94,7 @@ pub fn open(window: &mut Window, cx: &mut App, insert: impl Fn(&str, &mut Window
     });
 }
 
-fn catalog(
-    insert: std::rc::Rc<dyn Fn(&str, &mut Window, &mut App)>,
-    cx: &App,
-) -> impl IntoElement {
+fn catalog(insert: std::rc::Rc<InsertTokenFn>, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
     let (fg, muted, hover, radius) = (
         theme.foreground,

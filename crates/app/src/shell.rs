@@ -20,6 +20,7 @@ pub struct Shell {
     pub hotkeys: GlobalHotkeys,
     tray: Option<Tray>,
     window: Option<AnyWindowHandle>,
+    manager: Option<Entity<Manager>>,
     _window_closed: Option<Subscription>,
 }
 
@@ -31,6 +32,7 @@ impl Shell {
             let shell = cx.global_mut::<Shell>();
             if shell.window.is_some_and(|w| w.window_id() == closed_id) {
                 shell.window = None;
+                shell.manager = None;
             }
         });
         cx.set_global(Shell {
@@ -38,12 +40,23 @@ impl Shell {
             hotkeys,
             tray,
             window: None,
+            manager: None,
             _window_closed: Some(closed),
         });
     }
 
     pub fn enabled(&self) -> bool {
         self.state.enabled.load(Ordering::Relaxed)
+    }
+
+    #[cfg(feature = "parity")]
+    pub fn window_handle(&self) -> Option<AnyWindowHandle> {
+        self.window
+    }
+
+    #[cfg(feature = "parity")]
+    pub fn manager(&self) -> Option<Entity<Manager>> {
+        self.manager.clone()
     }
 }
 
@@ -91,8 +104,10 @@ pub fn open_window(cx: &mut App) {
     match gpui_kit::open_window(options, cx, |window, cx| {
         cx.new(|cx| Manager::new(window, cx))
     }) {
-        Ok((handle, _)) => {
-            cx.global_mut::<Shell>().window = Some(handle);
+        Ok((handle, manager)) => {
+            let shell = cx.global_mut::<Shell>();
+            shell.window = Some(handle);
+            shell.manager = Some(manager);
         }
         Err(e) => hypertype_core::logging::error(&format!("failed to open window: {e:?}")),
     }

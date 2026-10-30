@@ -7,6 +7,12 @@ repository = "https://github.com/Hi9841/HyperType"
 edition = "2024"
 publish = false
 
+[features]
+default = []
+# Pixel-parity judge: skip single-instance claim and keyboard hook, open the
+# manager at a fixed size, and drive named UI states via --parity-state.
+parity = []
+
 [dependencies]
 async-channel = "2"
 global-hotkey = "0.9.0"

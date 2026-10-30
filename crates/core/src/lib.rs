@@ -21,10 +21,10 @@ use std::sync::{Arc, RwLock};
 
 use app_state::AppState;
 
-/// Load storage and settings, then start the engine thread and keyboard hook.
-/// Call once, after the process has claimed single-instance ownership, so a
-/// rejected second process never installs a second hook.
-pub fn start() -> Arc<AppState> {
+/// Load snippets and settings into an [`AppState`] without starting the
+/// engine thread or the keyboard hook. Used by the parity judge so a second
+/// process never claims the instance mutex or installs a second hook.
+pub fn load_state_only() -> Arc<AppState> {
     let data_path = storage::data_file_path();
     let snippets = storage::load_or_default(&data_path);
     let settings = storage::load_settings(&storage::settings_file_path());
@@ -33,13 +33,18 @@ pub fn start() -> Arc<AppState> {
     expansion::set_paste_combo(settings.paste_combo);
     expansion::set_restore_delay_ms(settings.restore_delay_ms);
     expansion::set_auto_paste_words(settings.auto_paste_words);
-    let state = Arc::new(AppState {
+    Arc::new(AppState {
         snippets: RwLock::new(snippets),
-        // Restore the user's last pause/resume choice instead of silently
-        // re-enabling the engine on every launch.
         enabled: AtomicBool::new(settings.enabled),
         data_path,
-    });
+    })
+}
+
+/// Load storage and settings, then start the engine thread and keyboard hook.
+/// Call once, after the process has claimed single-instance ownership, so a
+/// rejected second process never installs a second hook.
+pub fn start() -> Arc<AppState> {
+    let state = load_state_only();
 
     // The engine and hook start before any window is shown: expansion runs
     // whether or not a window is ever opened.

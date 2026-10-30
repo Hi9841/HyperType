@@ -186,6 +186,30 @@ impl Manager {
         cx.notify();
     }
 
+    /// Drive the manager into a named parity state. Add arms here as slices land.
+    #[cfg(feature = "parity")]
+    pub fn apply_parity_state(
+        &mut self,
+        name: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match name {
+            "default-selected" => {
+                // Manager::new already selects the first snippet when the list
+                // is non-empty. Re-assert so a later reload cannot drift.
+                if let Some(first) = self.snippets.first().cloned() {
+                    self.select(&first, window, cx);
+                }
+            }
+            other => {
+                hypertype_core::logging::error(&format!(
+                    "parity: unknown state '{other}' (add an arm in Manager::apply_parity_state)"
+                ));
+            }
+        }
+    }
+
     fn reveal_selected(&self, cx: &App) {
         let Some(ix) = self.selected_index() else {
             return;

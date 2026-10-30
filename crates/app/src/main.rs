@@ -9,6 +9,8 @@ mod events;
 mod hotkeys;
 mod instance;
 mod manager;
+#[cfg(feature = "parity")]
+mod parity;
 mod settings;
 mod shell;
 mod theme;
@@ -27,6 +29,12 @@ use crate::tray::Tray;
 fn main() {
     logging::init();
     hypertype_core::install_panic_logger();
+
+    #[cfg(feature = "parity")]
+    if let Some(state_name) = parity::cli_state() {
+        parity::run(state_name);
+        return;
+    }
 
     let events = events::init();
     // Claim ownership before the engine starts, so a rejected second
