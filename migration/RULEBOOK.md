@@ -268,6 +268,27 @@ Brand mark: keep `assets/logo.png` (`assets::logo()`), 18x18. Paused =
    padding 20px 24px, gap 14px; follow each flex/grid rule literally.
    CSS `grid repeat(auto-fill, minmax(190px, 1fr))` -> compute the column
    count from the container width (S6).
+11. CSS `box-shadow` blur radius r -> GPUI `BoxShadow.blur_radius` is a
+   Gaussian sigma (wgpu `shaders.wgsl:320`). Convert:
+   `sigma = 0.57735 * r + 0.5` (Chromium). Spread and offset copy 1:1.
+   Put the conversion in one `tokens::css_blur(r)` helper and use it everywhere.
+12. Motion channels: every `transition(..)` id is derived from the control's
+   own element id (e.g. `(id, "thumb")`), never a constant shared by all
+   instances in a view. A transition whose first frame must animate (modal
+   fade-in, CSS keyframes that run on mount) starts at the `from` value and
+   then moves to the target; never create it at the target value.
+13. CSS transitions on non-hover state changes (switch track color, brand
+   mark opacity/grayscale, status dot color/glow, segmented thumb) are
+   REQUIRED with their CSS duration and easing. D3 covers only `:hover`.
+14. Pointer drags (slider, row reorder): keep tracking moves and the release
+   outside the element (window-level mouse move / `on_mouse_up_out`); the
+   drag state is keyed by the control id; a click on a range track jumps the
+   value to the pointer like `<input type="range">`.
+15. Raster images: draw PNGs at 1:1 from pre-scaled assets (area filter,
+   1x and 2x). The GPU sampler has no mipmaps (`wgpu_renderer.rs:1240`).
+16. Vertical centering remainders: when a centered child leaves an odd pixel,
+   match the reference (Chromium puts the extra pixel above). Check with the
+   parity crop.
 10. Scroll areas (`overflow-y: auto`) -> `div().id(..).overflow_y_scroll()`
    (track a `ScrollHandle` where needed). Do not invent a `scrollable()`
    helper. Scrollbar look follows D5.
@@ -328,6 +349,7 @@ S7a runs now. S7b after S5 and S7a merge.
 
 (empty)
 
+
 ## Amendment log
 
 - 2026-10-31 A1: applied review r1 (Grok 4.5 high), findings 1-15: frozen
@@ -335,6 +357,11 @@ S7a runs now. S7b after S5 and S7a merge.
   BoxShadow/prompt/Textarea API shapes, rfd mandatory, logo,
   overflow_y_scroll, focus-visible, hover rules, resize check, D10-D11.
   Owner rule added: Grok 4.7 xhigh review of every implementer result.
+- 2026-10-31 A2: from the S1 review (grok-4.7 xhigh): section 7 rules 11-16
+  (CSS blur -> sigma, per-control motion ids, enter animations, non-hover
+  transitions required, drag capture + click-to-jump, pre-scaled PNGs,
+  centering remainder). Fact: on this host DefWindowProc + gpui custom hit
+  test give resize on all 4 edges and corners (S1 WM_NCHITTEST probe).
 
 ## Deviation log
 

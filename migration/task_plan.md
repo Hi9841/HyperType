@@ -31,7 +31,10 @@ S4, S5+S6 and launch them in parallel.
 - Subagents: Grok 4.5 high via T3 `delegate_task`; owner allows several at
   once (2026-10-31). Each gets its own git worktree under `../wt/`; each brief
   forbids sub-agents. T3 `isolation: worktree` fails here (thread root is not
-  the repo), so worktrees are made by hand. No unit tests unless the owner asks; verify with the real app.
+  the repo), so worktrees are made by hand.
+- Review (owner, 2026-10-31): every implementer result gets a read-only
+  review by a separate grok-4.7 `xhigh` agent; the coordinator rules on its
+  findings (adversarial, default not-confirmed), then a fix round runs. No unit tests unless the owner asks; verify with the real app.
 - Commits: small, straight to `main`, no agent co-author lines.
 
 ## Completion criteria

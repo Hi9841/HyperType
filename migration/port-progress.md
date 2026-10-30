@@ -65,3 +65,91 @@ in `task_plan.md`.
   `hypertype-gpui-phase1-judge-r2`, taskId suffix `...hypertype-gpui-phase1-judge-r2`.
   Scope: R1 fill metric + validation (e)(f)(g), R2 rebuild + commit in meta,
   R3 wait for animations / freeze infinite ones, table fix.
+
+## 2026-10-31 - Phase 1 accepted, Phase 2-3 started
+- Fix round 1 result: fill metric (4x4 box, tol 3/255) + detail (pixelmatch
+  0.1). Thresholds detail <= 1.0%, fill <= 3.0%. Validation: noise 0/0,
+  broken 3.1/11.7 FAIL, GPUI-old 6.4/96.0 FAIL, surface 0/38.6 FAIL,
+  border +4 0/0 PASS (1px borders below fill resolution), grayscale text
+  0.66/2.56 PASS. Reference rebuilt from 137ac57; modal capture opaque
+  (checked by eye). Accepted.
+- Risk: raster-noise fill 2.56% is close to the 3.0% bar. Recalibrate with
+  the first faithful GPUI frame (S1 title bar); owner sign-off on images is
+  the final judge.
+- Commits on main: 6fcaebe (parity feature), 2dcf293 (plan + judge),
+  eb8d9f0 (RULEBOOK). Generated gpui/ and diff/ outputs are gitignored.
+- Owner: "You can use more than 1 grok subagent". T3 worktree isolation
+  fails ("Unable to resolve the parent checkout commit": thread root is the
+  outer folder, not the repo), so worktrees are made by hand in `../wt/`.
+- Running in parallel (all grok-4.5 high, verified):
+  | Task | clientRequestId | Worktree / branch |
+  | --- | --- | --- |
+  | S7a updater backend | hypertype-gpui-s7a-updater-r1b | wt/s7a, port/s7a-updater |
+  | S1 foundation | hypertype-gpui-s1-foundation-r1 | wt/s1, port/s1-foundation |
+  | RULEBOOK review (read-only) | hypertype-gpui-rulebook-review-r1 | main checkout, no edits |
+
+## 2026-10-31 - RULEBOOK review r1 and amendment A1
+- Review (grok-4.5 high, read-only): 3 blockers, 9 major, 3 minor. Verified
+  by coordinator in gpui-pre 0.3.9 source: BoxShadow fields
+  (style.rs:349-358), prompt signature (window.rs:6667), no path-prompt
+  filters (platform.rs:2802), frameless hit test (windows events.rs:987),
+  focus_visible exists (div.rs:1295). All 15 accepted.
+- A1 committed 693bb00: frozen Studio/Editor/update API, 4.1 behavioral
+  contracts, API shapes, rfd mandatory, D10-D11, instant hover (D3 mandatory).
+- S1 steered with the A1 summary (message hypertype-gpui-s1-steer-a1).
+- Owner rule: every implementer result gets a grok-4.7 xhigh review.
+
+## 2026-10-31 - S7a done, under review
+- S7a commit eaff319 on port/s7a-updater: updater.rs (ureq 2.12 rustls,
+  minisign-verify 0.2, semver, base64). Probe: 1.1.7 -> 1.1.8 found,
+  2,396,282 bytes, signature OK; 99.0.0 -> no update; tamper -> rejected.
+  Clippy pass (default + update-probe). Release exe 16,190,976 bytes before
+  and after (updater not yet called, removed by LTO).
+- Coordinator read: verify happens before the temp write; NSIS args
+  `/P /UPDATE /R /ARGS` + escaped argv, ShellExecuteW "open", then exit(0).
+  Open point: feed version string used in the temp path (path injection?).
+- Review r1 by grok-4.7 xhigh (verified): clientRequestId hypertype-gpui-s7a-review-r1.
+- S1 asked (title bar detail ~2%, fill ~6%). Answer: fix pill height and
+  any logo/dot/button geometry, treat PNG/SVG anti-aliasing as D4, re-diff
+  once, then finish checks and commit; classify each remaining difference
+  (geometry/color vs raster) with coordinates. Note: region % is not
+  comparable to the full-frame calibration; recalibrate per region later.
+
+## 2026-10-31 - S1 done, under review
+- S1 commit 8b567fc on port/s1-foundation. Clippy pass (default + parity),
+  resize hit-test OK on 4 edges + 4 corners (WM_NCHITTEST probes), Studio
+  frozen API + Editor/update stubs, superseded modules deleted.
+- Parity default-selected: full 4.18/59.3 (stubs), title bar 2.04/5.95,
+  sidebar 4.99/58.3, editor 3.97/65.1 (detail/fill %).
+- Coordinator zoom of the title bar (5x): layout, pill, buttons, colors
+  match. Not raster, contrary to S1's report: O1 status dot lacks the 1px
+  SURFACE_1 ring and its glow is weaker ((15,27,21) vs (17,46,27));
+  O2 logo paler/softer (likely poor downscale). O3 "HyperType" ~2px wider =
+  D2 letter-spacing (expected).
+- Review r1 by grok-4.7 xhigh (verified): hypertype-gpui-s1-review-r1.
+- S1 amendment requests: (1) region bars - decision pending: per-region bars
+  after the first complete frame; until then coordinator zoom + owner
+  sign-off rule D4 calls. (2) note that DefWindowProc gives side/bottom
+  resize hits on this host - accepted as fact, add to RULEBOOK at next amendment.
+- Plan: S2+S3, S4, S5+S6 start in parallel after S1's fix round merges
+  (they build on S1 widgets; a widget API change would break them).
+
+## 2026-10-31 - S7a review r1 ruled, fix round running
+- grok-4.7 xhigh review: VERDICT CHANGES, 20 findings (5 major, 11 minor,
+  4 nit), no blocker. Signature path, NSIS args, platform order, semver
+  compare confirmed correct against Tauri source.
+- Rulings: accept 1-18 and 20; reject 19 (user agent, no compat effect).
+  14/15 also bind S7b: relaunch only after the instance guard and hook are
+  released; all updater calls on a worker thread.
+- Coordinator open point (version in temp path) closed: semver forbids
+  '/' and '..'.
+- Fix round: grok-4.5 high, hypertype-gpui-s7a-fix-r1, wt/s7a, new commit.
+- S7a fix commit 6d3c00b (agent ended without a report). Coordinator
+  verified: clippy default + update-probe pass; live probes 1.1.7 and
+  v1.1.7 -> version "1.1.8", unique temp dir `hypertype-1.1.8-updater-*`,
+  signature OK, installer not run; 99.0.0 -> no update; tamper -> rejected.
+  Code has 204, dynamic shape + name alias, 512 MiB cap, HKCU proxy + env,
+  native-certs, MZ gate, chrono RFC3339, URL-free errors, redirects 10,
+  temp cleanup on launch failure. Not yet executed: 204 / dynamic / size /
+  pub_date / 404 local cases.
+- Verification review r2 (grok-4.7 xhigh): hypertype-gpui-s7a-review-r2.
