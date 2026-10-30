@@ -6,13 +6,14 @@ that has the same functions, layout, colors, type, motion, and copy as the
 v1.1.8 SolidJS UI, then remove the WebView stack.
 
 ## Current state
-Phase 0 complete; owner signed off 2026-10-30 ("ok use 4.5 on high").
-Phase 1 (parity judge) is in progress: one Grok 4.5 high agent.
+Phase 1 (parity judge) complete and committed (2dcf293). Phase 2 design doc
+`RULEBOOK.md` written; its adversarial review runs. Phase 3 started:
+S7a (updater backend, wt/s7a) and S1 (foundation, wt/s1) run in parallel.
 
 ## Next action
-Wait for Phase 1 fix round 1 (R1-R3, see `port-progress.md`). Then review
-its output read-only: run `migration/parity` validation (self-diff = 0,
-broken variant fails), read `states.md` / `scenarios.md` against App.tsx.
+Wait for S7a, S1, and the RULEBOOK review (task IDs in `port-progress.md`).
+Review each result; merge S1 into main; then create worktrees for S2+S3,
+S4, S5+S6 and launch them in parallel.
 
 ## Scope and constraints
 - Spec = `src/App.tsx`, `src/styles.css`, `src/components/Icons.tsx`,
@@ -27,8 +28,10 @@ broken variant fails), read `states.md` / `scenarios.md` against App.tsx.
 - Contracts in `migration/PLAN.md` §"Contract inventory" stay frozen
   (data paths, chord format, autostart key, install path, updater feed).
 - Rust builds use cargo (owner, 2026-10-30: "dont use blaze"; global AGENTS.md updated).
-- Subagents: Grok via T3 `delegate_task`, ONE at a time, each brief forbids
-  sub-agents. No unit tests unless the owner asks; verify with the real app.
+- Subagents: Grok 4.5 high via T3 `delegate_task`; owner allows several at
+  once (2026-10-31). Each gets its own git worktree under `../wt/`; each brief
+  forbids sub-agents. T3 `isolation: worktree` fails here (thread root is not
+  the repo), so worktrees are made by hand. No unit tests unless the owner asks; verify with the real app.
 - Commits: small, straight to `main`, no agent co-author lines.
 
 ## Completion criteria
@@ -47,12 +50,12 @@ broken variant fails), read `states.md` / `scenarios.md` against App.tsx.
 0. Feasibility report and plan. Status: complete. (`FEASIBILITY.md`, signed off)
 1. Parity judge: reference capture, GPUI capture hook, diff, scenarios;
    validated against the SolidJS UI AND a deliberately broken variant.
-   Status: in_progress.
+   Status: complete (commits 6fcaebe, 2dcf293).
 2. Design doc (`migration/RULEBOOK.md`): CSS token -> GPUI constant table,
    element map, state ownership, motion table, allowed deviations.
-   Adversarial review (not a bakeoff: this is a redesign posture). Status: pending.
+   Adversarial review (not a bakeoff: this is a redesign posture). Status: in_progress.
 3. Translation slices, one Grok agent at a time, each with a separate
-   read-only review and a parity run. Status: pending.
+   read-only review and a parity run. Status: in_progress (S1, S7a).
    - S1 Tokens, system fonts, 13 SVG icons, frameless window, title bar.
    - S2 Sidebar: search, New/Export/Import, toast, list, rows, empty state,
      native confirm + file dialogs.
