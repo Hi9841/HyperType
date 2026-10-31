@@ -202,3 +202,23 @@ in `task_plan.md`.
   a cross and the dot is ~1px high (to rule).
 - Verification review r2: grok-4.7 xhigh, hypertype-gpui-s1-review-r2.
 - Wrote `migration/briefs.md`: S2+S3, S4, S5+S6, S7b scopes for the fan-out.
+
+## 2026-10-31 - S1 verification r2 ruled; fan-out started early
+- grok-4.7 xhigh r2 of fa2af52: CHANGES. Live checks pass: drag map
+  (HTCAPTION/HTCLIENT), close hover red + white X, dot position aligned,
+  logo BOX assets exact. Blocking: F1 slider click/capture, F2 Kit Input
+  padding on value_edit, F3 dot ring rasterizes as a plus, F4 icon slot on
+  two buttons. Nits N4-N7 (file-wide allows, Kit clamps spring overshoot,
+  fadeIn keyword ease-out, logo 1.25x/1.5x). All accepted.
+- A3 committed be00714: rules 17-20 + region acceptance rule.
+- Running (all grok-4.5 high, verified):
+  | Task | clientRequestId | Worktree / branch (base) |
+  | --- | --- | --- |
+  | S1 fix r2 | hypertype-gpui-s1-fix-r2 | wt/s1 port/s1-foundation |
+  | S4 editor | hypertype-gpui-s4-editor-r1 | wt/s4 port/s4-editor (fa2af52) |
+  | S6 tokens modal | hypertype-gpui-s6-tokens-r1 | wt/s6 port/s6-tokens (fa2af52) |
+- Why early: S4 and S6 do not use the widgets S1 r2 changes (slider,
+  value_edit, icon buttons). S2 (uses btn_create_first) and S5 (slider,
+  value_edit, btn_check_updates) wait for S1 r2.
+- Merge order: S1 (rebased onto main, conflicts in main.rs/Cargo.toml with
+  the updater expected) -> S4, S6 rebased onto main.
