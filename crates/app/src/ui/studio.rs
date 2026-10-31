@@ -81,7 +81,7 @@ impl Studio {
 
         let weak = cx.weak_entity();
         let sidebar = cx.new(|cx| Sidebar::new(weak.clone(), window, cx));
-        let editor = cx.new(|cx| Editor::new(weak.clone(), cx));
+        let editor = cx.new(|cx| Editor::new(weak.clone(), window, cx));
         let settings = cx.new(|cx| SettingsModal::new(weak.clone(), window, cx));
         let tokens = cx.new(|cx| TokensModal::new(weak.clone(), cx));
 
