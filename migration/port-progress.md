@@ -266,3 +266,23 @@ in `task_plan.md`.
 - Verification r3: grok-4.7 xhigh, hypertype-gpui-s1-review-r3.
 - Merge note: S1 r2 and S4 both touch studio.rs (S4: Editor::new(window));
   resolve at S4 rebase.
+
+## 2026-10-31 - S6 review r1 ruled; A4; S6 fix round
+- grok-4.7 xhigh review of 2b642ec: CHANGES. Confirmed C1 (inline code
+  chips), C2 (no scrollbar), C3 (row pitch 60 vs 60/61, TIME title 2px
+  high). Also: pill label hover color (needs element id), Escape not
+  handled, fade curve (already fixed by S1 r2), copied modal_frame drifted,
+  insert check cannot fail while editor insert is a stub.
+- Ruling on Escape: App.tsx has NO Escape handler on either modal (only the
+  recorder, line 408). The RULEBOOK rule "Escape closes" was mine and wrong
+  for a 1:1 copy. Corrected in A4: Escape does nothing; keyboard parity =
+  native button tab stops, Enter/Space, focus-visible ring.
+- A4 committed eb479b0 + 61693eb: rules 21-25 (keyboard focus parity,
+  inline boxes are elements, fractional line heights, group hover needs an
+  id, scrollbar visible at rest).
+- S6 rebased onto S1 r2 (ae91379). Fix round: grok-4.5 high,
+  hypertype-gpui-s6-fix-r1, with an approved ADDITIVE exception in
+  widgets.rs: modal_frame_sized (modal_frame unchanged) and removal of any
+  Escape-close in the shared frame.
+- Follow-up for S1 (titlebar buttons) and S4 (editor controls): rule 21
+  keyboard focus parity must be checked in their next rounds.
