@@ -329,6 +329,11 @@ Brand mark: keep `assets/logo.png` (`assets::logo()`), 18x18. Paused =
    fraction, so stacked rows drift. Set explicit line heights or element
    heights so every row start matches the reference within 1px, measured
    on the last row of the region.
+23a. Rounding (A8): GPUI snaps fractional bounds toward zero; Chromium rounds
+   half up. A stack of fractional boxes (59.5px rows, 30.5px headers) drifts
+   0.5px per item on GPUI. Place repeated items on the reference pixel grid
+   (e.g. alternate 59/60px heights, round header heights up) and check every
+   item top against the boxes, not only the first.
 24. `group_hover` / hover styles on a text child apply only when that child
    is a stateful element: give it a stable id.
 25. A scroll area whose content overflows shows a scrollbar at rest
@@ -432,6 +437,8 @@ S7a runs now. S7b after S5 and S7a merge.
   tab_index 0, tree order, first Tab from no focus, no modal focus trap).
   Inline text that wraps is built from per-word elements in a wrapping row
   (no hand-placed line breaks).
+- 2026-10-31 A8: rule 23a - emulate Chromium half-up rounding for stacked
+  fractional boxes (from the S2 sidebar rows).
 
 ## Deviation log
 
