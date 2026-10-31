@@ -416,3 +416,16 @@ in `task_plan.md`.
   Investigation task: grok-4.5 high, hypertype-gpui-textwidth-r1, in wt/s6,
   temporary changes reverted, fix delivered as a diff (likely S1 tokens.rs).
 - S6 holds its merge until the text width outcome.
+
+## 2026-10-31 - S1 fix round 3 done; S1 verification r4; S2 started
+- 25a9b42 (mod.rs, studio.rs, titlebar.rs, widget_lab.rs, widgets.rs):
+  slider live drag outside the track, control row top(1)/h28, pill text,
+  shared widget focus (tab_index 0, Enter/Space, slider keys, rings), Studio
+  root focus + "Studio" key context so the first Tab reaches the title bar
+  (verified live), no modal trap, idle 180 s OK. Title bar 1.513 / 4.621 %.
+  OPEN: switch Enter/Space after click-focus does not toggle.
+- Verification r4: grok-4.7 xhigh, hypertype-gpui-s1-review-r4 (incl. the
+  switch diagnosis, Studio root focus regressions).
+- S2+S3 sidebar started from 25a9b42 (widget signatures unchanged in r3):
+  grok-4.5 high, hypertype-gpui-s2-sidebar-r1, wt/s2, port/s2-sidebar.
+- S5 (settings) waits for the text-width outcome (keeps <= 3 Grok agents).
