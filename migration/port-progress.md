@@ -567,3 +567,16 @@ in `task_plan.md`.
   Regression parity unchanged (sidebar 2.299/5.835 ..., tokens 5.624/13.876).
 - ALL UI slices merged: S1 S2 S4 S5 S6 + S7a. Next: S7b update UI glue,
   then full parity + scenario sweep, release build metrics, Phase 6.
+
+## 2026-10-31 - S7b update UI merged (coordinator)
+- b4832d1: ui/update.rs per App.tsx 53-120 (silent check at open, skipped in
+  parity builds; manual texts; 4 s clear with a generation guard; install with
+  live percent; "Update failed: <45>"; background executor). updater.rs:
+  UpdateInfo Clone; stale "future UI" allows removed (signature + relaunch
+  keep reasoned allows). Clippy default/parity/update-probe pass.
+- Live with a fake local feed (version 9.9.9, bogus signature; server in
+  %TEMP%\claude\feed_server.py, stopped after): manual check -> footer
+  "Update to v9.9.9"; install -> GET fake.exe, signature rejected before any
+  write (no hypertype-9.9.9-updater-* dir), process alive, button back to
+  idle. Parity state update-available shows the "Update v1.1.9" pill.
+  Real log 8025 -> 8025.
