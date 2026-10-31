@@ -20,6 +20,8 @@ after each result: grok-4.7 `xhigh` (read-only). See [task_plan.md](task_plan.md
   `migration/parity` (`bun run run -- <state> --region x,y,w,h`) with APPDATA
   on a temp copy of `migration/parity/seed`. Never stop the installed
   HyperType; never touch the real `%APPDATA%\HyperType`.
+- Geometry: get exact targets with `bun run boxes -- <state> --grep <class>`
+  (reference element and text line boxes); match within 1px.
 - Checks: `cargo clippy -p hypertype --all-targets -- -D warnings` and with
   `--features parity`.
 - Report: files changed; per spec line range what was built; parity numbers

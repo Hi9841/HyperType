@@ -324,3 +324,12 @@ in `task_plan.md`.
   judge tool "reference element boxes" (grok-4.5 high,
   hypertype-gpui-judge-boxes-r1, wt/judge, port/judge-boxes) so slices
   match exact reference geometry instead of guessing line boxes.
+
+## 2026-10-31 - Judge boxes merged (A6)
+- 9e4dcf0: capture-reference writes reference/<state>.boxes.json (every
+  visible element rect + computed style, text line rects); `bun run boxes`
+  CLI. All 11 reference PNGs bit-identical (SHA-256). Coordinator verified:
+  0 PNG files in the diff; CLI prints h2 at y=62 h=24 (16px/24px).
+  Reviewed by the coordinator (judge tooling, no app code).
+- Note: settings modal has 9 pref-rows (brief said 8; agent was right).
+- A6: boxes are the geometry target in RULEBOOK section 10 and briefs.md.

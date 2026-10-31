@@ -381,6 +381,10 @@ Anything else that differs is a defect.
 | S7a updater backend | `updater.rs` | probe against the real feed |
 | S7b updater UI | `ui/update.rs` (pill in titlebar.rs and footer in settings_modal.rs already read it) | update-available (manual) |
 
+Geometry targets: `bun run boxes -- <state> --grep <class>` (in
+`migration/parity`) prints the reference element boxes and text line boxes.
+Every element y, height, and text line y must match within 1px (A6).
+
 Region acceptance: a parity state (or region) passes when both metrics are
 under the VALIDATION.md bars, OR when every remaining failing 4x4 block is
 listed with coordinates and classified D2 (letter-spacing) or D4 (glyph or
@@ -415,6 +419,8 @@ S7a runs now. S7b after S5 and S7a merge.
   21-25 (keyboard focus parity, inline boxes are elements, fractional line
   heights, group hover needs an id, scrollbar visible at rest).
 - 2026-10-31 A5: from the S4 review: displayed lengths are UTF-16 units.
+- 2026-10-31 A6: reference element boxes (`bun run boxes`, commit 9e4dcf0)
+  are the geometry target; match within 1px.
 
 ## Deviation log
 
