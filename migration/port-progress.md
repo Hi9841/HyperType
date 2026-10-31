@@ -626,3 +626,16 @@ in `task_plan.md`.
   Export/Import (Enter on Export opened two dialogs). Live keyboard check ok.
 - Not yet verified: animation timing (row slide 130 ms, release behaviour,
   all other motion) - needs the motion judge.
+
+## 2026-10-31 - First real run (owner test)
+- Owner quit the installed (elevated) HyperType. Real data backed up to
+  %APPDATA%\HyperType-backup-20261031-111618. Release build 3m25s.
+- First launch of the real build PANICKED at startup: "cannot update Studio
+  while it is already being updated" - update::check (S7b) updated Studio
+  from inside Studio::new. Parity builds skip the silent check, so the judge
+  never ran this path. Fix: cx.defer the check (commit below).
+- Second launch via scripts/dev-run.ps1 -Release: PID 33420 from
+  %LOCALAPPDATA%\HyperType-dev, keyboard + mouse hooks registered, "HyperType
+  ready", window shows the owner's 7 real snippets. Owner testing now.
+- Lesson: parity mode must not skip startup paths that real builds run; add
+  a real-build smoke launch to every merge gate.
