@@ -21,8 +21,17 @@ use crate::ui::studio::Studio;
 use crate::ui::tokens;
 use crate::ui::widgets::{self, trigger_badge};
 
-/// `.studio-item` layout height (ref 59.5; integer 59 keeps row starts within 1px).
-const ROW_HEIGHT: f32 = 59.;
+/// `.studio-item` is 59.5px (padding 8+8, border 1+1, content 41.5) with a
+/// 4px gap, so the reference pitch is 63.5px. Chromium rounds the fractional
+/// edges half up (row tops 178, 241, 305, 368, 432); GPUI snaps toward zero
+/// and would drift 0.5px per row. Rows alternate 59/60px to land on the
+/// reference pixel grid.
+fn row_height(index: usize) -> f32 {
+    if index.is_multiple_of(2) { 59. } else { 60. }
+}
+
+/// Drag pitch: the spec reads `offsetHeight` (59.5 rounded to 60).
+const DRAG_ROW_HEIGHT: f32 = 60.;
 const TRANSFER_CLEAR: Duration = Duration::from_secs(3);
 const SEARCH_PLACEHOLDER: &str = "Search triggers or content...";
 
@@ -39,7 +48,7 @@ pub struct Sidebar {
     studio: WeakEntity<Studio>,
     /// Mirrored search text (App.tsx `search` signal).
     search: String,
-    search_input: Option<Entity<InputState>>,
+    search_input: Entity<InputState>,
     transfer_busy: bool,
     transfer_message: String,
     transfer_clear_task: Option<Task<()>>,
@@ -55,35 +64,14 @@ pub struct Sidebar {
 }
 
 impl Sidebar {
-    pub fn new(studio: WeakEntity<Studio>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(studio: WeakEntity<Studio>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let _observe = studio
             .upgrade()
             .map(|entity| cx.observe(&entity, |_, _, cx| cx.notify()))
             .expect("Studio must exist when Sidebar is created");
-        Self {
-            studio,
-            search: String::new(),
-            search_input: None,
-            transfer_busy: false,
-            transfer_message: String::new(),
-            transfer_clear_task: None,
-            drag: Rc::new(Cell::new(None)),
-            pending_drag: Rc::new(Cell::new(None)),
-            scroll: ScrollHandle::new(),
-            parity_hover_row: None,
-            _observe,
-            _subs: Vec::new(),
-        }
-    }
-
-    /// Kit `InputState` needs a `Window`; Studio constructs Sidebar without one
-    /// (Request: pass `window` into `Sidebar::new`). Lazy-init on first paint.
-    fn ensure_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search_input.is_some() {
-            return;
-        }
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder(SEARCH_PLACEHOLDER));
-        let search_sub = cx.subscribe_in(&input, window, {
+        let search_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(SEARCH_PLACEHOLDER));
+        let search_sub = cx.subscribe_in(&search_input, window, {
             move |this, input, event: &InputEvent, _window, cx| {
                 if matches!(
                     event,
@@ -101,9 +89,20 @@ impl Sidebar {
                 cx.notify();
             }
         });
-        self.search_input = Some(input);
-        self._subs.push(search_sub);
-        self._subs.push(activation_sub);
+        Self {
+            studio,
+            search: String::new(),
+            search_input,
+            transfer_busy: false,
+            transfer_message: String::new(),
+            transfer_clear_task: None,
+            drag: Rc::new(Cell::new(None)),
+            pending_drag: Rc::new(Cell::new(None)),
+            scroll: ScrollHandle::new(),
+            parity_hover_row: None,
+            _observe,
+            _subs: vec![search_sub, activation_sub],
+        }
     }
 
     fn reorder_locked(&self) -> bool {
@@ -124,13 +123,10 @@ impl Sidebar {
     }
 
     fn set_search_text(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
-        self.ensure_search(window, cx);
         self.search = text.to_string();
-        if let Some(input) = self.search_input.clone() {
-            input.update(cx, |state, cx| {
-                state.set_value(text.to_string(), window, cx);
-            });
-        }
+        self.search_input.update(cx, |state, cx| {
+            state.set_value(text.to_string(), window, cx);
+        });
         cx.notify();
     }
 
@@ -144,12 +140,11 @@ impl Sidebar {
         cx: &mut Context<Self>,
     ) {
         self.set_search_text(text, window, cx);
-        if let Some(input) = self.search_input.clone() {
-            if focus {
-                input.focus_handle(cx).focus(window, cx);
-            } else if input.focus_handle(cx).is_focused(window) {
-                window.blur(cx);
-            }
+        let focus_handle = self.search_input.focus_handle(cx);
+        if focus {
+            focus_handle.focus(window, cx);
+        } else if focus_handle.is_focused(window) {
+            window.blur(cx);
         }
         cx.notify();
     }
@@ -436,7 +431,6 @@ impl Sidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        self.ensure_search(window, cx);
         self.parity_hover_row = None;
         match name {
             "default-selected" => {
@@ -530,7 +524,6 @@ fn excerpt_text(expansion: &str) -> SharedString {
 
 impl Render for Sidebar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.ensure_search(window, cx);
 
         let studio = self.studio.upgrade();
         let snippets = studio
@@ -551,7 +544,7 @@ impl Render for Sidebar {
         let search_nonempty = !self.search.is_empty();
         let has_query = !self.search.trim().is_empty();
 
-        let search_input = self.search_input.clone().expect("ensure_search");
+        let search_input = self.search_input.clone();
         let search_focused = search_input.focus_handle(cx).is_focused(window);
 
         let entity = cx.entity().downgrade();
@@ -691,20 +684,6 @@ impl Sidebar {
                     .relative()
                     .w_full()
                     .child(
-                        // .search-icon — styles.css:235-243
-                        div()
-                            .id("search-icon")
-                            .absolute()
-                            .left(px(10.))
-                            .top(px(0.))
-                            .h(px(32.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_color(tokens::ink_3())
-                            .child(icons::search()),
-                    )
-                    .child(
                         // .studio-search-input — styles.css:245-260
                         // Kit Input still applies size padding/height (rule 17); zero py and
                         // force the style height so the frame stays 32px.
@@ -751,6 +730,21 @@ impl Sidebar {
                                         this
                                     }),
                             ),
+                    )
+                    .child(
+                        // .search-icon — styles.css:235-243. After the input frame: CSS
+                        // absolute paints above static siblings; GPUI paints in tree order.
+                        div()
+                            .id("search-icon")
+                            .absolute()
+                            .left(px(10.))
+                            .top(px(0.))
+                            .h(px(32.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(tokens::ink_3())
+                            .child(icons::search()),
                     )
                     .when(search_nonempty, {
                         let entity = entity.clone();
@@ -939,14 +933,17 @@ impl Sidebar {
 
     fn render_list_header(&self, filtered_count: usize) -> impl IntoElement {
         // .sidebar-list-header — styles.css:337-342
-        // Ref height 30.5 (pad 10+4 + line 16.5). Lock 31px and center the
-        // 16px line so title/count y match within 1px (rule 23 / A6).
+        // Padding 10px 14px 4px around one 11px/1.5 line: box 30.5, text line
+        // at +10 (reference title line y=151 for the header at 141).
         h_flex()
             .id("sidebar-list-header")
+            // 30.5 in the reference; 31 keeps the list on Chromium's rounded grid
+            // (list top 172, first row 178).
             .h(px(31.))
+            .pt(px(10.))
             .px(px(14.))
             .justify_between()
-            .items_center()
+            .items_start()
             .child(
                 // .list-title — styles.css:343-348 (letter-spacing D2)
                 div()
@@ -1031,18 +1028,20 @@ impl Sidebar {
             ));
         }
 
+        // Rule 25: a scrollbar shows only when the rows overflow (max offset is
+        // from the previous layout, which is stable for this list).
+        let overflows = scroll.max_offset().y > px(0.);
         list.children(rows)
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .child(
+            .when(overflows, |list| {
+                list.child(
+                    div().absolute().inset_0().child(
                         Scrollbar::vertical(&scroll)
                             .id("studio-snippets-scrollbar")
                             .mode(ScrollbarMode::Always)
                             .viewport_from_layout(),
                     ),
-            )
+                )
+            })
             .into_any_element()
     }
 
@@ -1238,7 +1237,7 @@ fn render_row(
                         let y = f32::from(ev.position.y);
                         entity
                             .update(cx, |this, cx| {
-                                this.arm_drag(index, y, ROW_HEIGHT, cx);
+                                this.arm_drag(index, y, DRAG_ROW_HEIGHT, cx);
                             })
                             .ok();
                         cx.stop_propagation();
@@ -1364,7 +1363,6 @@ fn render_row(
         .child(icons::close());
 
     // .studio-item — styles.css:364-383
-    // Ref height 59.5; use 59 so row starts stay within 1px after the header lock.
     h_flex()
         .id(row_id)
         .group(group_name)
@@ -1373,7 +1371,7 @@ fn render_row(
         .when(is_dragging, |this| this.occlude())
         .items_center()
         .gap(px(8.))
-        .h(px(59.))
+        .h(px(row_height(index)))
         .px(px(10.))
         .py(px(8.))
         .bg(if is_active {
