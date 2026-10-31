@@ -509,3 +509,25 @@ in `task_plan.md`.
   review + fixes (C1 icon, C2 scrollbar, C3 drift); S5 ba89727 under review
   (row drift); S7a merged; S7b not started; Phase 6 scope question open.
 - Waiting for the owner: top up Grok, or switch implementers/reviewers.
+
+## 2026-10-31 - Coordinator-direct work: S1, S4, S6 merged
+- Owner: Grok exhausted -> coordinator does the work directly; Phase 6 in
+  scope (confirm release-affecting steps first).
+- S1 round 4 finished by coordinator (d77fd09 -> rebased 521c7a5): switch +
+  segmented single activation (live: click->true, Enter->false, Space->true,
+  Space->false; real log 8025 -> 8025), kern on Studio root + mono metric
+  font, Sidebar::new + SettingsModal::new take window. Title bar 1.491/4.583;
+  HyperType ink 65 vs 64 and STUDIO 36 vs 38 = exactly the CSS letter-spacing
+  (D2). Clippy default/parity/update-probe pass. Rebased onto main (one
+  main.rs conflict: keep `mod ui; mod updater;`). MERGED.
+- S4 rebased with --onto (studio.rs ctor line: all three take window).
+  Editor region after kern: default 1.357/3.247, new 2.081/5.492,
+  save-disabled same, shortcut-empty 1.815/4.817, recording 1.815/4.908.
+  MERGED 5eec9de.
+- S6 rebased (widgets.rs doc conflict); coordinator fix c0b6395: intro in
+  six segments (no per-word ceil waste) -> wrap matches the reference;
+  removed duplicate tab_index and the extra Enter/Space handlers on the
+  modal close button and pills (single on_click path). Card region
+  5.624/13.876 (remaining D2 titles, D4 glyphs, D5 scrollbar). MERGED.
+- Next: S2 (sidebar: C1 icon, C2 scrollbar, C3 drift, Sidebar::new window),
+  S5 (settings: row drift, ctor), S7b, full parity + scenarios, Phase 6.
