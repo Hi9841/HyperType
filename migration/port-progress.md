@@ -250,3 +250,19 @@ in `task_plan.md`.
 - Request (S1-owned widgets.rs): modal_frame(width, max_height) params.
   Plan: apply after S1 fix r2 lands, then S6 fix round removes the copy.
 - Review r1: grok-4.7 xhigh, hypertype-gpui-s6-review-r1.
+
+## 2026-10-31 - S1 fix round 2 done, verification r3 running
+- 77af696 on port/s1-foundation: slider capture + click commit on release
+  (Rc<Cell> drag state keyed per id), value_edit padding 0 / h 16.8,
+  dot = two filled circles, icon slots on two buttons (spin frozen in
+  parity), item-level allows, unclamped spring(t), keyword ease-out fade,
+  logo 18/23/27/36. Parity-only widget-lab state for slider/value_edit/buttons.
+  Title bar 1.895 / 4.962 %; 131 failing blocks: D2 104, D4 27, defect 0.
+  Kit Input ignores synthetic SendInput (F2 commit proven by code path).
+- Coordinator check: brand 5x zoom matches, dot round; widget-lab f1a shows
+  thumb at 25 % and committed=25; value_edit dashed underline, no padding.
+- Answered the agent's question: click with no movement must commit on
+  release (spec input+change).
+- Verification r3: grok-4.7 xhigh, hypertype-gpui-s1-review-r3.
+- Merge note: S1 r2 and S4 both touch studio.rs (S4: Editor::new(window));
+  resolve at S4 rebase.
