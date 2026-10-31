@@ -396,8 +396,11 @@ impl Render for TokensModal {
 /// `.tokens-catalog-intro` — styles.css:1009-1020.
 ///
 /// Rule 22 / A7: each `<code>` is its own element (bg/padding/radius), not a
-/// TextRun. Prose is per-word elements in one `flex_wrap` row so the break
-/// matches the browser (`{date:us}` starts line 2 after "or flags").
+/// TextRun. Prose sits in one `flex_wrap` row of a few segments, split only
+/// where the browser can break (line 1 ends "...or flags", line 2 starts
+/// "like"). GPUI rounds each text element's width up to a whole pixel
+/// (gpui-pre text.rs:772), so per-word elements would waste up to 1px each
+/// and push "flags" to line 2.
 fn catalog_intro() -> impl IntoElement {
     let prose = |text: &'static str| {
         div()
@@ -431,26 +434,11 @@ fn catalog_intro() -> impl IntoElement {
         .min_h(px(39.))
         .flex_wrap()
         .items_center()
-        .child(prose("Click "))
-        .child(prose("any "))
-        .child(prose("token "))
-        .child(prose("to "))
-        .child(prose("insert "))
-        .child(prose("it "))
-        .child(prose("directly "))
-        .child(prose("into "))
-        .child(prose("your "))
-        .child(prose("expansion "))
-        .child(prose("canvas. "))
-        .child(prose("You "))
-        .child(prose("can "))
-        .child(prose("also "))
-        .child(prose("mix "))
-        .child(prose("offsets "))
-        .child(prose("like "))
+        .child(prose(
+            "Click any token to insert it directly into your expansion canvas. You can also mix offsets like ",
+        ))
         .child(code("{date+3d}"))
-        .child(prose(" or "))
-        .child(prose("flags "))
+        .child(prose(" or flags "))
         .child(prose("like "))
         .child(code("{date:us}"))
         .child(prose("."))
@@ -536,30 +524,13 @@ fn token_pill(
         .focus_visible(|s| {
             s.shadow(tokens::focus_visible_shadows(tokens::surface_2()))
         })
-        .on_click({
-            let this = this.clone();
-            move |_, window, cx| {
-                if let Some(entity) = this.upgrade() {
-                    entity.update(cx, |modal, cx| {
-                        modal.insert_and_close(token, window, cx);
-                    });
-                }
-            }
-        })
-        // Explicit Enter/Space (rule 21). GPUI also maps these on focused
-        // clickable tab stops; keep both paths for synthetic-input hosts.
-        .on_key_down({
-            let this = this.clone();
-            move |ev, window, cx| {
-                let key = ev.keystroke.key.as_str();
-                if (key == "enter" || key == "space") && !ev.keystroke.modifiers.modified() {
-                    if let Some(entity) = this.upgrade() {
-                        entity.update(cx, |modal, cx| {
-                            modal.insert_and_close(token, window, cx);
-                        });
-                    }
-                    cx.stop_propagation();
-                }
+        // Enter/Space (rule 21): GPUI fires on_click on KeyUp for the focused
+        // pill; a separate key handler would insert twice.
+        .on_click(move |_, window, cx| {
+            if let Some(entity) = this.upgrade() {
+                entity.update(cx, |modal, cx| {
+                    modal.insert_and_close(token, window, cx);
+                });
             }
         })
         .child(
