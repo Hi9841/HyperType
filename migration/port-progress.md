@@ -460,3 +460,21 @@ in `task_plan.md`.
   parity/gpui/ (shared folder). briefs.md now says: outputs stay in the
   worktree or %TEMP%; only the boxes CLI runs from main.
 - Review r1: grok-4.7 xhigh, hypertype-gpui-s5-review-r1.
+
+## 2026-10-31 - S1 verification r4 ruled; S1 fix round 4
+- grok-4.7 xhigh r4 of 25a9b42: CHANGES (1 blocker). PASS live: slider hold
+  outside (live 100 / 1 during hold), slider keys, control row + pill text
+  y within 1px, idle 3 min, first Tab -> settings then tree order, Shift+Tab,
+  no modal trap, value_edit typing (Ctrl+A, 42, Enter -> committed=42).
+  Blocker: switch Enter/Space toggles twice (GPUI click fires on KeyUp AND our
+  on_key_down toggles). Segmented has the same double path (harmless).
+  Rulings: accept; value_edit has no ring by spec (`outline: none`) - nit
+  rejected; modal_frame Escape left to S6 merge.
+- Incident: one reviewer launch (via WMI) lacked APPDATA -> 2 parity lines
+  in the REAL %APPDATA%\HyperType\hypertype.log (8016-8017) and
+  "single-instance triggered" lines (8001, 8019) = the installed app was asked
+  to show its window. snippets.json (Oct 27) and settings.json (Sep 9)
+  untouched. Briefs now require APPDATA in every launch + log line check.
+- Fix round 4 (grok-4.5 high, hypertype-gpui-s1-fix-r4): switch/segmented
+  single activation path, kern font features (proven diff), SettingsModal::new
+  takes window.
