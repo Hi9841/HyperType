@@ -32,6 +32,10 @@ fn row_height(index: usize) -> f32 {
 
 /// Drag pitch: the spec reads `offsetHeight` (59.5 rounded to 60).
 const DRAG_ROW_HEIGHT: f32 = 60.;
+
+/// `.studio-snippets-list` padding-top and row gap (styles.css:355-362).
+const LIST_PAD_TOP: f32 = 6.;
+const ROW_GAP: f32 = 4.;
 const TRANSFER_CLEAR: Duration = Duration::from_secs(3);
 const SEARCH_PLACEHOLDER: &str = "Search triggers or content...";
 
@@ -195,7 +199,9 @@ impl Sidebar {
         };
         let dy = client_y - state.start_y;
         let rh = state.row_height.max(1.);
-        let drop = ((state.from as f32) + (dy / rh).round())
+        // JS Math.round (App.tsx:537): floor(x + 0.5), so -1.5 -> -1 (Rust
+        // round() would give -2 and drop one slot further up).
+        let drop = ((state.from as f32) + (dy / rh + 0.5).floor())
             .clamp(0., (count.saturating_sub(1)) as f32) as usize;
         state.drag_y = dy;
         state.drop_idx = drop;
@@ -1012,28 +1018,51 @@ impl Sidebar {
         let shifts: Vec<Pixels> = (0..filtered.len())
             .map(|i| self.row_shift(i, freeze, window, cx))
             .collect();
+        let drag_active = drag.is_some();
+        let pad_right = if overflows { 25. } else { 10. };
         let mut rows = Vec::with_capacity(filtered.len());
+        // The dragged row has z-index 10 in the spec (App.tsx:573). GPUI paints
+        // in tree order, so it leaves a same-size placeholder in its slot and
+        // paints last, still inside the list (clipped like overflow: auto).
+        let mut dragged_row = None;
         for (i, snippet) in filtered.iter().enumerate() {
             let is_active =
                 !creating_new && selected.as_deref() == Some(snippet.trigger.as_str());
             let force_hover = parity_hover == Some(i);
             let is_dragging = drag.is_some_and(|d| d.from == i);
-            rows.push(render_row(
+            let row = render_row(
                 snippet,
                 i,
                 count,
                 is_active,
                 force_hover,
                 is_dragging,
+                drag_active,
                 shifts[i],
                 reorder_locked,
                 entity.clone(),
                 window,
                 cx,
-            ));
+            );
+            if is_dragging {
+                rows.push(div().flex_shrink_0().h(px(row_height(i))).into_any_element());
+                let slot_top = LIST_PAD_TOP
+                    + (0..i).map(|k| row_height(k) + ROW_GAP).sum::<f32>();
+                dragged_row = Some(
+                    v_flex()
+                        .absolute()
+                        .top(px(slot_top))
+                        .left(px(10.))
+                        .right(px(pad_right))
+                        .child(row),
+                );
+            } else {
+                rows.push(row);
+            }
         }
 
         list.children(rows)
+            .children(dragged_row)
             .when(overflows, |list| {
                 list.child(
                     div().absolute().inset_0().child(
@@ -1159,6 +1188,7 @@ fn render_row(
     is_active: bool,
     force_hover: bool,
     is_dragging: bool,
+    drag_active: bool,
     shift: Pixels,
     reorder_locked: bool,
     entity: WeakEntity<Sidebar>,
@@ -1219,12 +1249,20 @@ fn render_row(
             0.4
         })
         .when(!reorder_locked, |this| {
-            this.cursor(CursorStyle::OpenHand)
+            this.cursor(if is_dragging {
+                CursorStyle::ClosedHand
+            } else {
+                CursorStyle::OpenHand
+            })
                 .track_focus(&grip_focus)
                 .tab_index(0)
                 .tab_stop(true)
                 .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::surface_2())))
-                .group_hover(group_name.clone(), |s| s.opacity(1.))
+                // The pointer is captured by the grip during a drag, so no
+                // other row gets :hover (App.tsx:524).
+                .when(!drag_active, |this| {
+                    this.group_hover(group_name.clone(), |s| s.opacity(1.))
+                })
                 .tooltip({
                     let tip = grip_tip.clone();
                     move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
@@ -1319,35 +1357,20 @@ fn render_row(
         .text_color(tokens::ink_3())
         // Keep a tiny opacity when idle so the hit target stays live; hover
         // / group_hover still ramp to 1 for the visual (styles.css:453-471).
-        .opacity(if force_hover { 1. } else { 0. })
+        .opacity(if force_hover || is_dragging { 1. } else { 0. })
         .cursor(CursorStyle::PointingHand)
         .track_focus(&delete_focus)
         .tab_index(0)
         .tab_stop(true)
         .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::surface_2())))
-        .group_hover(group_name.clone(), |s| s.opacity(1.))
-        .hover(|s| s.bg(tokens::danger_tint()).text_color(tokens::danger()).opacity(1.))
-        .tooltip(move |window, cx| Tooltip::new("Delete snippet").build(window, cx))
-        .on_key_down({
-            let entity = entity.clone();
-            let trigger = trigger.clone();
-            move |ev, window, cx| {
-                if ev.keystroke.modifiers.modified() {
-                    return;
-                }
-                match ev.keystroke.key.as_str() {
-                    "enter" | "space" => {
-                        entity
-                            .update(cx, |this, cx| {
-                                this.delete_row(trigger.clone(), window, cx);
-                            })
-                            .ok();
-                        cx.stop_propagation();
-                    }
-                    _ => {}
-                }
-            }
+        .when(!drag_active, |this| {
+            this.group_hover(group_name.clone(), |s| s.opacity(1.)).hover(|s| {
+                s.bg(tokens::danger_tint()).text_color(tokens::danger()).opacity(1.)
+            })
         })
+        .tooltip(move |window, cx| Tooltip::new("Delete snippet").build(window, cx))
+        // Enter/Space: GPUI fires on_click on KeyUp for the focused button; a
+        // separate key handler would open the confirm prompt twice.
         .on_click({
             let entity = entity.clone();
             let trigger = trigger.clone();
@@ -1395,7 +1418,7 @@ fn render_row(
         })
         .rounded(px(8.))
         .cursor(CursorStyle::PointingHand)
-        .when(!is_active && !force_hover, |this| {
+        .when(!is_active && !force_hover && !drag_active, |this| {
             this.hover(|s| s.bg(tokens::surface_3()).border_color(tokens::line_2()))
         })
         .on_click({
