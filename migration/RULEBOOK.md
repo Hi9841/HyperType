@@ -174,6 +174,9 @@ the brand mark, and the Settings switch all read `studio.status.enabled`.
 ### 4.1 Behavioral contracts (copy strings verbatim)
 
 - Text trigger: at most 64 code points; extra input is cut (App.tsx:375-379).
+- Lengths shown to the user (footer "chars", row badge "N chars") are
+  JavaScript `.length` = UTF-16 code units (`str.encode_utf16().count()`),
+  never bytes. Only the trigger cap counts code points (A5).
 - `canSave` = not busy, trimmed trigger non-empty, expansion non-empty (260-261).
 - Save success text "Snippet created!" (new) / "Saved!" (edit), cleared after 3 s (466-474).
 - Recorder (400-435, shortcut.ts:28-37): click starts; Esc cancels; pointer
@@ -411,6 +414,7 @@ S7a runs now. S7b after S5 and S7a merge.
   handler on modals (section 5 corrected: Escape does not close); rules
   21-25 (keyboard focus parity, inline boxes are elements, fractional line
   heights, group hover needs an id, scrollbar visible at rest).
+- 2026-10-31 A5: from the S4 review: displayed lengths are UTF-16 units.
 
 ## Deviation log
 
