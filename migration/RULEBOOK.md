@@ -315,6 +315,13 @@ Brand mark: keep `assets/logo.png` (`assets::logo()`), 18x18. Paused =
    Enter and Space; disabled controls are skipped; the focus-visible ring
    (rule 3) shows for keyboard focus only. No extra shortcuts (no Escape to
    close modals, no Ctrl+S) unless the spec has them.
+21a. Tab order (A7): every tab stop and tab group uses `tab_index(0)`, so
+   GPUI orders stops by tree order = DOM order (`tab_stop.rs` sorts by the
+   tab_index path, then insertion order). Never use positive indices. With
+   no element focused, the first Tab focuses the first stop in DOM order
+   (the title bar), exactly like a browser: S1 makes the window root focused
+   so Kit's `Root` Tab binding dispatches. Modals do not trap focus (the
+   spec has no trap): Tab continues through the page behind the backdrop.
 22. A `TextRun` carries color and font only. Inline elements with a box
    (background, padding, radius, other font size), e.g. `.tokens-catalog-intro
    code`, are separate elements in a wrapping flex row, not text runs.
@@ -421,6 +428,10 @@ S7a runs now. S7b after S5 and S7a merge.
 - 2026-10-31 A5: from the S4 review: displayed lengths are UTF-16 units.
 - 2026-10-31 A6: reference element boxes (`bun run boxes`, commit 9e4dcf0)
   are the geometry target; match within 1px.
+- 2026-10-31 A7: from the S6 verification: rule 21a tab order (all
+  tab_index 0, tree order, first Tab from no focus, no modal focus trap).
+  Inline text that wraps is built from per-word elements in a wrapping row
+  (no hand-placed line breaks).
 
 ## Deviation log
 
