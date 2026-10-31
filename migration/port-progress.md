@@ -286,3 +286,20 @@ in `task_plan.md`.
   Escape-close in the shared frame.
 - Follow-up for S1 (titlebar buttons) and S4 (editor controls): rule 21
   keyboard focus parity must be checked in their next rounds.
+
+## 2026-10-31 - S4 review r1 ruled; A5; S4 fix round
+- grok-4.7 xhigh review of f773437: CHANGES, verified live with real input.
+  C1-C3 confirmed (All Tokens style, textarea Kit padding +10/+7 and no
+  placeholder wrap, line-box drift 1-2px). Plus: click-away overlay fails on
+  resize and right click and swallows the click; bare keys type into the
+  textarea during recording; focus moves do not cancel; recorder lacks the
+  focus ring; char count in bytes (café😀 = 9, spec 6); long error pushes
+  Save off-canvas; load() blurs the search field. Passed live: Esc cancel,
+  left click-away, mode switch, 64 code-point cap, Create + "Snippet
+  created!" 3 s, token at caret, duplicate error, Delete prompt.
+- Rulings: accept 1-10; 11 (busy never painted) no change: native save is
+  synchronous. studio.rs one-line Editor::new(window) accepted.
+- A5 committed a61a609: displayed lengths are UTF-16 units (S2 row badge too).
+- S4 rebased onto S1 r2 (f86bfdd, clean). Fix round: grok-4.5 high,
+  hypertype-gpui-s4-fix-r1. Also applies rule 21 keyboard parity.
+- parity/.gitignore: zooms/ and package-lock.json ignored.

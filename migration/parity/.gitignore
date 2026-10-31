@@ -5,3 +5,5 @@ node_modules/
 validation/
 gpui/
 diff/
+zooms/
+package-lock.json
