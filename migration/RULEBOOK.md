@@ -289,6 +289,22 @@ Brand mark: keep `assets/logo.png` (`assets::logo()`), 18x18. Paused =
 16. Vertical centering remainders: when a centered child leaves an odd pixel,
    match the reference (Chromium puts the extra pixel above). Check with the
    parity crop.
+17. Kit `Input` sizing: `appearance(false)` removes fill and border only.
+   A single-line Input still applies its size padding and height
+   (`input.rs:784-803`, `sizing.rs`). Set horizontal padding, vertical padding,
+   and height explicitly to the CSS values (0 where CSS says 0).
+18. Overshooting curves: Kit clamps eased progress to [0, 1]
+   (`animation.rs:55-61`), so SPRING never overshoots. Run the transition
+   with a linear easing and map progress through `tokens::spring(t)` (our own
+   cubic-bezier(0.32, 1.25, 0.32, 1) solver, unclamped) when you interpolate
+   the value.
+19. CSS keyword easings are not the custom tokens: `ease-out` =
+   cubic-bezier(0, 0, 0.58, 1), `ease-in-out` = (0.42, 0, 0.58, 1), `ease` =
+   (0.25, 0.1, 0.25, 1). Use the curve the CSS rule names.
+20. Small round elements with a 1px border (under about 12px) rasterize as a
+   plus in the GPU border fast path (`shaders.wgsl:669-675`). Draw them as
+   two stacked filled circles (outer = border color, inner = fill, inset
+   1px), not as `border_1` + `rounded_full`.
 10. Scroll areas (`overflow-y: auto`) -> `div().id(..).overflow_y_scroll()`
    (track a `ScrollHandle` where needed). Do not invent a `scrollable()`
    helper. Scrollbar look follows D5.
@@ -342,6 +358,12 @@ Anything else that differs is a defect.
 | S7a updater backend | `updater.rs` | probe against the real feed |
 | S7b updater UI | `ui/update.rs` (pill in titlebar.rs and footer in settings_modal.rs already read it) | update-available (manual) |
 
+Region acceptance: a parity state (or region) passes when both metrics are
+under the VALIDATION.md bars, OR when every remaining failing 4x4 block is
+listed with coordinates and classified D2 (letter-spacing) or D4 (glyph or
+image raster) by the reviewer, and the coordinator agrees from a 5x zoom.
+Geometry or color differences never pass this way.
+
 Order: S1 first (alone). Then S2+S3, S4, S5+S6 in parallel worktrees.
 S7a runs now. S7b after S5 and S7a merge.
 
@@ -362,6 +384,9 @@ S7a runs now. S7b after S5 and S7a merge.
   transitions required, drag capture + click-to-jump, pre-scaled PNGs,
   centering remainder). Fact: on this host DefWindowProc + gpui custom hit
   test give resize on all 4 edges and corners (S1 WM_NCHITTEST probe).
+- 2026-10-31 A3: from the S1 verification review (grok-4.7 xhigh): rules
+  17-20 (Kit Input padding/height, unclamped spring, CSS keyword easings,
+  small bordered circles) and the region acceptance rule in section 10.
 
 ## Deviation log
 
