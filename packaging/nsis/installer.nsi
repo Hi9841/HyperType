@@ -477,7 +477,7 @@ FunctionEnd
 ;Languages
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_RESERVEFILE_LANGDLL
-  !include "C:\Users\hi\desktop\work\HyperType\HyperType\src-tauri\target\release\nsis\x64\English.nsh"
+  !include "English.nsh"
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
