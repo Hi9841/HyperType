@@ -1,9 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/app","crates/core"]
-# The legacy Tauri adapter keeps its own lockfile until cutover
-# (see migration/PLAN.md).
-exclude = ["src-tauri"]
+members = ["crates/app", "crates/core", "tools/sign"]
 
 # Release profile tuned for a small, fast background binary.
 [profile.release]
