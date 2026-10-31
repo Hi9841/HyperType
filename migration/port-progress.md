@@ -429,3 +429,19 @@ in `task_plan.md`.
 - S2+S3 sidebar started from 25a9b42 (widget signatures unchanged in r3):
   grok-4.5 high, hypertype-gpui-s2-sidebar-r1, wt/s2, port/s2-sidebar.
 - S5 (settings) waits for the text-width outcome (keeps <= 3 Grok agents).
+
+## 2026-10-31 - Text width root cause found
+- Investigation (grok-4.5 high, hypertype-gpui-textwidth-r1; worktree left
+  clean): GPUI DirectWrite applies `kern` only when listed in FontFeatures
+  (gpui-pre-windows direct_write.rs:1797-1833); FontFeatures::default() is
+  empty (font_features.rs:8-14). Chromium kerns by default. With kern=1 UI
+  widths match to <0.01px (All Tokens 50.499 vs 50.500, title 231.06 vs
+  231.06, intro run 502.667 vs 502.672); mono unchanged and already exact.
+  Remaining title gaps = CSS letter-spacing exactly (D2). No opsz axis API
+  (<0.3% effect). Text element widths are ceil()'d (text.rs:772): per-word
+  atoms waste up to 1px each.
+- Fix diff: tokens::font_features_ui() = [("kern",1)], set on the Studio root
+  + mono_zero_advance. Goes into S1's next round (S1 owns the files).
+- S6 intro: rebuild with few segments ("Click ... like ", chip, " or flags ",
+  "like ", chip, ".") after the kern fix lands.
+- S5 started: worktree wt/s5, port/s5-settings from 25a9b42.
