@@ -374,3 +374,19 @@ in `task_plan.md`.
   recording (spec consumes every key).
 - Correction: my "footer 2px high" note was wrong; footer y matches.
 - Fix round 2: grok-4.5 high, hypertype-gpui-s4-fix-r2.
+
+## 2026-10-31 - S6 verification r2 ruled; A7; S6 fix round 2
+- grok-4.7 xhigh r2 of 92f412f (parked pointer): CHANGES. Pass: scrollbar
+  Always + wheel + fixed header, label hover INK_2, no Escape, Tab/Enter/
+  Space after focus, fade curve, modal_frame unchanged, no Escape in frame.
+  Blocking: hand-placed intro break (" or flags" fits line 1 with 5.19px
+  slack), chips 14 vs 16px, pill stack 1px high (3 rows miss 1px), first
+  Tab with nothing focused does nothing (Kit binds Tab only in "Root"
+  context). Nits: hovered_token duplicates hover (brace claim false);
+  fixed 52/53 heights would clip wrapped labels.
+- Rulings: 1-3, 5 to S6; 4 moved to S1 (window-wide); 6 keep + comment.
+- A7 committed 5e08dad: rule 21a - all tab_index(0) (GPUI sorts by index
+  path then insertion order), first Tab from no focus goes to the first
+  stop in DOM order, modals do not trap focus; inline text wraps per word.
+- S1 fix round 3 steered with A7 (shared widgets tab_index 0 + root focus
+  for the first Tab). S6 fix round 2: grok-4.5 high, hypertype-gpui-s6-fix-r2.
