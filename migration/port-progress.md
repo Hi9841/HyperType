@@ -303,3 +303,24 @@ in `task_plan.md`.
 - S4 rebased onto S1 r2 (f86bfdd, clean). Fix round: grok-4.5 high,
   hypertype-gpui-s4-fix-r1. Also applies rule 21 keyboard parity.
 - parity/.gitignore: zooms/ and package-lock.json ignored.
+- S4 asked to copy shared widgets into editor.rs for focus support: refused.
+  Rule 21 focus for shared widgets (segmented, btn_*, switch, slider,
+  value_edit) will be added ONCE in widgets.rs (S1 owner) as a follow-up;
+  S4 adds focus only to editor-owned controls and lists the need.
+
+## 2026-10-31 - S4 fix round 1 done; verification + judge boxes running
+- 6904321 (editor.rs only): All Tokens builder, textarea inset + own
+  wrapping placeholder, explicit line boxes, capture-phase click-away
+  listener (overlay removed), key swallow, recorder focus/blur cancel,
+  UTF-16 chars, footer flex/truncate, load() no blur, editor-owned tab
+  stops. Region detail/fill now: default 2.39/6.26, new 3.46/9.41,
+  save-disabled 3.46/9.41, shortcut-empty 2.91/7.69, recording 3.24/8.96.
+- Coordinator side-by-side: very close; remaining drift label/trigger/token
+  row 1px high, textarea and footer ~2px high (CSS line boxes: e.g. inline
+  12px span in a 13px/1.5 block uses a 19.5px strut).
+- Request from S4: focus support in widgets::segmented / btn_* (rule 21) -
+  coordinator to schedule ONE widgets.rs pass for all shared controls.
+- Running: S4 verification r2 (grok-4.7 xhigh, hypertype-gpui-s4-review-r2);
+  judge tool "reference element boxes" (grok-4.5 high,
+  hypertype-gpui-judge-boxes-r1, wt/judge, port/judge-boxes) so slices
+  match exact reference geometry instead of guessing line boxes.
