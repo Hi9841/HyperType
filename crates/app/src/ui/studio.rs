@@ -80,9 +80,9 @@ impl Studio {
         let autostart = autostart::is_enabled();
 
         let weak = cx.weak_entity();
-        let sidebar = cx.new(|cx| Sidebar::new(weak.clone(), cx));
+        let sidebar = cx.new(|cx| Sidebar::new(weak.clone(), window, cx));
         let editor = cx.new(|cx| Editor::new(weak.clone(), cx));
-        let settings = cx.new(|cx| SettingsModal::new(weak.clone(), cx));
+        let settings = cx.new(|cx| SettingsModal::new(weak.clone(), window, cx));
         let tokens = cx.new(|cx| TokensModal::new(weak.clone(), cx));
 
         let _subscriptions = vec![
@@ -356,6 +356,7 @@ impl Render for Studio {
             .bg(tokens::bg())
             .text_color(tokens::ink())
             .font_family(tokens::FONT_UI)
+            .font_features(tokens::font_features_ui())
             .text_size(px(tokens::ROOT_SIZE))
             .line_height(relative(tokens::ROOT_LINE_HEIGHT))
             .font_weight(FontWeight::NORMAL)

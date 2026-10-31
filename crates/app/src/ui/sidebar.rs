@@ -12,7 +12,7 @@ pub struct Sidebar {
 }
 
 impl Sidebar {
-    pub fn new(studio: WeakEntity<Studio>, cx: &mut Context<Self>) -> Self {
+    pub fn new(studio: WeakEntity<Studio>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let _observe = studio
             .upgrade()
             .map(|entity| cx.observe(&entity, |_, _, cx| cx.notify()))

@@ -124,6 +124,14 @@ pub const FONT_MONO: &str = "Cascadia Code";
 #[allow(dead_code)] // value_edit mono metrics
 pub const FONT_MONO_FALLBACKS: &[&str] = &["Cascadia Mono", "Consolas"];
 
+/// Chromium enables OpenType `kern` by default (`font-kerning: auto`).
+/// GPUI's DirectWrite path only applies tags listed in `FontFeatures`
+/// (gpui-pre-windows direct_write.rs:1797-1833); empty features leave kern
+/// off and shape UI text wider than the reference.
+pub fn font_features_ui() -> FontFeatures {
+    FontFeatures(std::sync::Arc::new(vec![("kern".into(), 1)]))
+}
+
 pub const ROOT_SIZE: f32 = 13.0;
 pub const ROOT_LINE_HEIGHT: f32 = 1.5;
 

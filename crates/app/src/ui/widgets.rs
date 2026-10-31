@@ -180,21 +180,8 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
                         cx.stop_propagation();
                     }
                 })
-                .on_key_down({
-                    let on_change = on_change.clone();
-                    move |ev, window, cx| {
-                        if ev.keystroke.modifiers.modified() {
-                            return;
-                        }
-                        match ev.keystroke.key.as_str() {
-                            "enter" | "space" => {
-                                on_change(value, window, cx);
-                                cx.stop_propagation();
-                            }
-                            _ => {}
-                        }
-                    }
-                })
+                // Enter/Space: GPUI fires `on_click` on KeyUp for focused elements
+                // (pending_keyboard_down). Do not also handle keys here.
                 .on_click(move |_, window, cx| {
                     on_change(value, window, cx);
                 })
@@ -275,21 +262,8 @@ pub fn switch(
         .on_mouse_down(MouseButton::Left, move |_, window, cx| {
             focus_for_mouse.focus(window, cx);
         })
-        .on_key_down({
-            let on_toggle = on_toggle.clone();
-            move |ev, window, cx| {
-                if ev.keystroke.modifiers.modified() {
-                    return;
-                }
-                match ev.keystroke.key.as_str() {
-                    "enter" | "space" => {
-                        on_toggle(!checked, window, cx);
-                        cx.stop_propagation();
-                    }
-                    _ => {}
-                }
-            }
-        })
+        // Enter/Space: GPUI fires `on_click` on KeyUp for focused elements
+        // (pending_keyboard_down). Do not also handle keys here.
         .on_click(move |_, window, cx| on_toggle(!checked, window, cx))
         .child(
             div()
@@ -606,7 +580,7 @@ fn mono_zero_advance(window: &Window) -> Pixels {
     let text_system = window.text_system();
     let font = Font {
         family: tokens::FONT_MONO.into(),
-        features: FontFeatures::default(),
+        features: tokens::font_features_ui(),
         fallbacks: Some(FontFallbacks::from_fonts(
             tokens::FONT_MONO_FALLBACKS
                 .iter()
