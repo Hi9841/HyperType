@@ -699,14 +699,32 @@ pub fn hook_badge(active: bool, label: impl Into<SharedString>) -> impl IntoElem
 }
 
 /// Modal backdrop + card + header. styles.css:799-849.
-/// Fade in 150 ms from 0→1 on open (RULEBOOK rule 12). Backdrop click and Escape close.
+/// Settings size: 500px / 85vh. Fade in 150 ms from 0 to 1 on open (RULEBOOK
+/// rule 12). Backdrop click closes. Escape does NOT close (A4 / rule 21).
 ///
-/// Rule 21a: no focus trap — Tab continues through page stops behind the backdrop.
-/// Close control is `tab_index(0)` (tree order).
+/// Rule 21a: no focus trap - Tab continues through page stops behind the
+/// backdrop. Close control is `tab_index(0)` (tree order).
 #[allow(dead_code)] // S5/S6 modals
 pub fn modal_frame(
     id: impl Into<ElementId>,
     title: impl Into<SharedString>,
+    freeze: bool,
+    on_close: impl Fn(&mut Window, &mut App) + 'static,
+    body: impl IntoElement,
+    window: &mut Window,
+    cx: &mut App,
+) -> impl IntoElement {
+    modal_frame_sized(id, title, px(500.), 0.85, freeze, on_close, body, window, cx)
+}
+
+/// Sized modal frame. Catalog uses 680px / 0.88 (styles.css:995-998).
+/// `overflow_hidden` on the card. No Escape-to-close (A4).
+#[allow(dead_code)] // S5/S6 modals
+pub fn modal_frame_sized(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    width: Pixels,
+    max_height_frac: f32,
     freeze: bool,
     on_close: impl Fn(&mut Window, &mut App) + 'static,
     body: impl IntoElement,
@@ -736,19 +754,13 @@ pub fn modal_frame(
             let close = on_close.clone();
             move |_, window, cx| close(window, cx)
         })
-        .on_key_down({
-            let close = on_close.clone();
-            move |ev, window, cx| {
-                if ev.keystroke.key == "escape" {
-                    close(window, cx);
-                    cx.stop_propagation();
-                }
-            }
-        })
         .child(
             v_flex()
-                .w(px(500.))
-                .max_h(relative(0.85))
+                .id("modal-card")
+                .tab_group()
+                .tab_stop(false)
+                .w(width)
+                .max_h(relative(max_height_frac))
                 .bg(tokens::surface_1())
                 .border_1()
                 .border_color(tokens::line_2())
@@ -760,11 +772,13 @@ pub fn modal_frame(
                     spread_radius: px(0.),
                     inset: false,
                 }])
+                .overflow_hidden()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| {
                     cx.stop_propagation();
                 })
                 .child(
                     h_flex()
+                        .flex_none()
                         .px(px(20.))
                         .py(px(16.))
                         .border_b_1()
@@ -779,13 +793,14 @@ pub fn modal_frame(
                                 .child(title.into()),
                         )
                         .child(
+                            // Close is first tab stop in the modal tab_group (rule 21).
                             div()
                                 .id("modal-close")
+                                .tab_index(0)
                                 .p(px(4.))
                                 .rounded(px(4.))
                                 .text_color(tokens::ink_3())
                                 .cursor(CursorStyle::PointingHand)
-                                .tab_index(0)
                                 .hover(|s| s.text_color(tokens::ink()))
                                 .focus_visible(|s| {
                                     s.shadow(tokens::focus_visible_shadows(tokens::surface_1()))
@@ -794,7 +809,12 @@ pub fn modal_frame(
                                 .tooltip(move |window, cx| {
                                     Tooltip::new("Close").build(window, cx)
                                 })
-                                .on_click(move |_, window, cx| close(window, cx)),
+                                // Enter/Space: GPUI fires on_click on KeyUp for the
+                                // focused element; no separate key handler.
+                                .on_click({
+                                    let close = close.clone();
+                                    move |_, window, cx| close(window, cx)
+                                }),
                         ),
                 )
                 .child(body),

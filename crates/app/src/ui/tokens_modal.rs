@@ -1,20 +1,17 @@
 //! Token catalog modal (S6). Spec: App.tsx:1268-1446, styles.css:795-849 + 975-1073.
 //!
-//! `widgets::modal_frame` hardcodes the Settings card at 500px / 85vh. The catalog
-//! needs 680px / 88vh and a scroll body, so this file builds the frame locally with
-//! the same backdrop/header/fade pattern. Request: extend `modal_frame` with
-//! `card_width` + `card_max_h` so S6 can call it instead of duplicating.
+//! Uses `widgets::modal_frame_sized(680px, 0.88)`. Fade via `transition_modal_fade`
+//! (CSS keyword ease-out). No Escape-to-close (A4 / rule 21).
 
 use std::rc::Rc;
 
-use gpui_kit::base::Presence;
-use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::scroll::{Scrollbar, ScrollbarMode};
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
-use crate::ui::icons;
 use crate::ui::studio::{Modal, Studio};
 use crate::ui::tokens;
+use crate::ui::widgets;
 
 /// One catalog entry: token string + label (App.tsx verbatim).
 struct TokenEntry {
@@ -200,6 +197,9 @@ pub struct TokensModal {
     studio: WeakEntity<Studio>,
     /// Content width of `.tokens-catalog-body` (padding excluded). Default = 680-40.
     body_width: f32,
+    scroll: ScrollHandle,
+    /// Token string of the pill under the pointer (rule 24 label ink).
+    hovered_token: Option<&'static str>,
     _observe: Subscription,
 }
 
@@ -214,6 +214,8 @@ impl TokensModal {
             // Card 680px, body padding 20px L/R, Chromium scrollbar ~15px → ~605-625.
             // Seed assumes the gutter so the first frame already uses 3 columns.
             body_width: 625.,
+            scroll: ScrollHandle::new(),
+            hovered_token: None,
             _observe,
         }
     }
@@ -303,6 +305,8 @@ impl Render for TokensModal {
             .is_some_and(|e| e.read(cx).freeze_animations);
         let studio = self.studio.clone();
         let cols = auto_fill_columns(self.body_width);
+        let scroll = self.scroll.clone();
+        let body_entity = cx.entity();
 
         let on_close = {
             let studio = studio.clone();
@@ -311,211 +315,150 @@ impl Render for TokensModal {
             })
         };
 
-        // Local catalog frame (modal_frame is 500/85; need 680/88). styles.css:799-849 + 995-998.
-        let id: ElementId = "tokens-modal".into();
-        let policy = tokens::motion(tokens::transition_modal_fade(), freeze);
-        let opacity = Presence::new((id.clone(), "fade"), true)
-            .transition(policy)
-            .sample(window, cx)
-            .progress;
+        // Tab indices: close = 0 (from modal_frame_sized), pills = 1..n in DOM order.
+        let hovered = self.hovered_token;
+        let mut tab = 1isize;
+        let mut groups = Vec::new();
+        for group in GROUPS {
+            let start = tab;
+            tab += group.entries.len() as isize;
+            groups.push(category_group(
+                group,
+                cols,
+                start,
+                hovered,
+                body_entity.downgrade(),
+            ));
+        }
 
-        let close = on_close.clone();
-        let body_entity = cx.entity();
-
-        div()
-            .id(id)
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(tokens::modal_backdrop())
-            .opacity(opacity)
-            .on_mouse_down(MouseButton::Left, {
-                let close = on_close.clone();
-                move |_, window, cx| close(window, cx)
-            })
-            .on_key_down({
-                let close = on_close.clone();
-                move |ev, window, cx| {
-                    if ev.keystroke.key == "escape" {
-                        close(window, cx);
-                        cx.stop_propagation();
-                    }
-                }
-            })
+        // Body — styles.css:1000-1006. Content sizes the card up to max_h; then
+        // this flex_1 + overflow_y_scroll viewport scrolls. Kit scrollbar overlays
+        // the reserved 15px right gutter (pr 35 = 20 + 15). No taffy scrollbar_width.
+        let body = v_flex()
+            .id("tokens-catalog-body")
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .pt(px(16.))
+            .pb(px(24.))
+            .pl(px(20.))
+            .pr(px(35.))
+            .gap(px(18.))
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
             .child(
-                // .tokens-catalog-card — styles.css:816-825 + 995-998
-                v_flex()
-                    .id("tokens-catalog-card")
-                    .w(px(680.))
-                    .max_h(relative(0.88))
-                    .bg(tokens::surface_1())
-                    .border_1()
-                    .border_color(tokens::line_2())
-                    .rounded(px(12.))
-                    .shadow(vec![BoxShadow {
-                        color: tokens::modal_shadow(),
-                        offset: point(px(0.), px(20.)),
-                        blur_radius: tokens::css_blur(60.),
-                        spread_radius: px(0.),
-                        inset: false,
-                    }])
-                    .overflow_hidden()
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                        cx.stop_propagation();
-                    })
-                    .child(
-                        // .settings-modal-header — styles.css:827-837
-                        h_flex()
-                            .flex_none()
-                            .px(px(20.))
-                            .py(px(16.))
-                            .border_b_1()
-                            .border_color(tokens::line())
-                            .justify_between()
-                            .items_center()
-                            .child(
-                                div()
-                                    .text_size(px(14.))
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(tokens::ink())
-                                    .child("Dynamic Insert Tokens & Modifiers"),
-                            )
-                            .child(
-                                // .modal-close-btn — styles.css:838-849
-                                div()
-                                    .id("tokens-modal-close")
-                                    .p(px(4.))
-                                    .rounded(px(4.))
-                                    .text_color(tokens::ink_3())
-                                    .cursor(CursorStyle::PointingHand)
-                                    .hover(|s| s.text_color(tokens::ink()))
-                                    .child(icons::close())
-                                    .tooltip(move |window, cx| {
-                                        Tooltip::new("Close").build(window, cx)
-                                    })
-                                    .on_click(move |_, window, cx| close(window, cx)),
-                            ),
-                    )
-                    .child(
-                        // .tokens-catalog-body — styles.css:1000-1006
-                        v_flex()
-                            .id("tokens-catalog-body")
-                            .relative()
-                            .flex_1()
-                            .min_h_0()
-                            .w_full()
-                            .pt(px(16.))
-                            .pb(px(24.))
-                            // Left 20 matches CSS. Right 20+15 reserves Chromium scrollbar
-                            // gutter so column widths match the reference capture (D5 look
-                            // still differs; width is geometry).
-                            .pl(px(20.))
-                            .pr(px(35.))
-                            .gap(px(18.))
-                            .overflow_y_scroll()
-                            .child(
-                                // Width probe only — absolute so it does not consume flex gap.
-                                canvas(
-                                    {
-                                        let entity = body_entity.clone();
-                                        move |bounds, _, cx| {
-                                            let w = f32::from(bounds.size.width);
-                                            // Ignore empty first-layout probes.
-                                            if w < 200. {
-                                                return;
-                                            }
-                                            entity.update(cx, |this, cx| {
-                                                if (this.body_width - w).abs() > 0.5 {
-                                                    this.body_width = w;
-                                                    cx.notify();
-                                                }
-                                            });
-                                        }
-                                    },
-                                    |_, _, _, _| {},
-                                )
-                                .absolute()
-                                .top(px(0.))
-                                .left(px(0.))
-                                .w_full()
-                                .h(px(0.)),
-                            )
-                            .child(catalog_intro())
-                            .children(GROUPS.iter().map(|group| {
-                                category_group(group, cols, body_entity.downgrade())
-                            })),
-                    ),
+                // Width probe only — absolute so it does not consume flex gap.
+                canvas(
+                    {
+                        let entity = body_entity.clone();
+                        move |bounds, _, cx| {
+                            let w = f32::from(bounds.size.width);
+                            // Ignore empty first-layout probes.
+                            if w < 200. {
+                                return;
+                            }
+                            entity.update(cx, |this, cx| {
+                                if (this.body_width - w).abs() > 0.5 {
+                                    this.body_width = w;
+                                    cx.notify();
+                                }
+                            });
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .top(px(0.))
+                .left(px(0.))
+                .w_full()
+                .h(px(0.)),
             )
+            .child(catalog_intro())
+            .children(groups)
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .child(
+                        Scrollbar::vertical(&scroll)
+                            .id("tokens-catalog-scrollbar")
+                            .mode(ScrollbarMode::Always)
+                            .viewport_from_layout(),
+                    ),
+            );
+
+        widgets::modal_frame_sized(
+            "tokens-modal",
+            "Dynamic Insert Tokens & Modifiers",
+            px(680.),
+            0.88,
+            freeze,
+            {
+                let on_close = on_close.clone();
+                move |window, cx| on_close(window, cx)
+            },
+            body,
+            window,
+            cx,
+        )
     }
 }
 
-/// `.tokens-catalog-intro` — styles.css:1009-1020
+/// `.tokens-catalog-intro` — styles.css:1009-1020.
 ///
-/// One StyledText paragraph so wrapping matches the spec. Code spans use mono +
-/// ACCENT_INK + SURFACE_2 background (padding/radius on inline runs omitted).
+/// Rule 22: each `<code>` is its own element (bg/padding/radius), not a TextRun.
+/// Two rows match the reference wrap: `{date:us}` starts line 2.
 fn catalog_intro() -> impl IntoElement {
-    const TEXT: &str = "Click any token to insert it directly into your expansion canvas. You can also mix offsets like {date+3d} or flags like {date:us}.";
-    const CODE1: &str = "{date+3d}";
-    const CODE2: &str = "{date:us}";
-    let i1 = TEXT.find(CODE1).expect("intro code1");
-    let i2 = TEXT.find(CODE2).expect("intro code2");
-
-    let ui_font = Font {
-        family: tokens::FONT_UI.into(),
-        features: FontFeatures::default(),
-        fallbacks: Some(FontFallbacks::from_fonts(vec![
-            tokens::FONT_UI_FALLBACK.to_string(),
-        ])),
-        weight: FontWeight::NORMAL,
-        style: FontStyle::Normal,
+    let prose = |text: &'static str| {
+        div()
+            .text_size(px(12.5))
+            .line_height(px(19.))
+            .text_color(tokens::ink_2())
+            .child(text)
     };
-    let mono_font = Font {
-        family: tokens::FONT_MONO.into(),
-        features: FontFeatures::default(),
-        fallbacks: Some(FontFallbacks::from_fonts(
-            tokens::FONT_MONO_FALLBACKS
-                .iter()
-                .map(|f| (*f).to_string())
-                .collect(),
-        )),
-        weight: FontWeight::NORMAL,
-        style: FontStyle::Normal,
+    let code = |token: &'static str| {
+        div()
+            .id(SharedString::from(format!("tokens-intro-code-{token}")))
+            .font_family(tokens::FONT_MONO)
+            .text_size(px(11.5))
+            .line_height(px(12.))
+            .text_color(tokens::accent_ink())
+            .bg(tokens::surface_2())
+            .rounded(px(4.))
+            .px(px(5.))
+            .py(px(1.))
+            .child(token)
     };
 
-    let ink = tokens::ink_2();
-    let accent = tokens::accent_ink();
-    let code_bg = Some(tokens::surface_2());
-
-    let run = |len: usize, font: Font, color: Hsla, bg: Option<Hsla>| TextRun {
-        len,
-        font,
-        color,
-        background_color: bg,
-        underline: None,
-        strikethrough: None,
-    };
-
-    div()
+    // Two explicit rows: GPUI has no inline layout, so a single flex row clips
+    // "or flags like" past the card edge. `{date:us}` still starts line 2.
+    v_flex()
         .id("tokens-catalog-intro")
         .w_full()
-        .text_size(px(12.5))
-        .line_height(relative(1.5))
         .child(
-            StyledText::new(TEXT).with_runs(vec![
-                run(i1, ui_font.clone(), ink, None),
-                run(CODE1.len(), mono_font.clone(), accent, code_bg),
-                run(i2 - (i1 + CODE1.len()), ui_font.clone(), ink, None),
-                run(CODE2.len(), mono_font, accent, code_bg),
-                run(TEXT.len() - (i2 + CODE2.len()), ui_font, ink, None),
-            ]),
+            h_flex()
+                .w_full()
+                .items_center()
+                .child(prose(
+                    "Click any token to insert it directly into your expansion canvas. You can also mix offsets like ",
+                ))
+                .child(code("{date+3d}")),
+        )
+        .child(
+            h_flex()
+                .items_center()
+                .child(prose("or flags like "))
+                .child(code("{date:us}"))
+                .child(prose(".")),
         )
 }
 
 fn category_group(
     group: &'static TokenGroup,
     cols: usize,
+    tab_start: isize,
+    hovered: Option<&'static str>,
     this: WeakEntity<TokensModal>,
 ) -> impl IntoElement {
     // .token-category-group — styles.css:1022-1026
@@ -528,42 +471,65 @@ fn category_group(
         .gap(px(8.))
         .child(
             // .token-cat-title — styles.css:1028-1033 (letter-spacing omitted: D2)
+            // Explicit 16px line box: 1.5×10.5 = 15.75 → Chromium/GPUI match (rule 23).
             div()
                 .text_size(px(10.5))
+                .line_height(px(16.))
                 .font_weight(FontWeight::BOLD)
                 .text_color(tokens::ink_3())
                 .child(group.title),
         )
-        .children(rows.into_iter().map(move |row| {
+        .children(rows.into_iter().enumerate().map(move |(row_ix, row)| {
             let this = this.clone();
             let missing = cols - row.len();
+            // Subpixel row pitch 60.55 → alternating 52/53 pill heights + gap 8
+            // yields starts 0, 60, 121, 181 (pitches 60, 61, 60) — rule 23.
+            let pill_h = if row_ix % 2 == 0 { px(52.) } else { px(53.) };
+            let mut tab = tab_start + (row_ix * cols) as isize;
             h_flex()
                 .w_full()
                 .gap(px(8.))
                 .children(row.iter().map(move |entry| {
-                    token_pill(entry, this.clone())
+                    let t = tab;
+                    tab += 1;
+                    let label_hot = hovered == Some(entry.token);
+                    token_pill(entry, pill_h, t, label_hot, this.clone())
                 }))
                 .children((0..missing).map(|_| {
                     // Keep last-row track widths equal to 1fr columns.
-                    div().flex_1().min_w(px(190.))
+                    div().flex_1().min_w(px(190.)).h(pill_h)
                 }))
         }))
 }
 
 fn token_pill(
     entry: &'static TokenEntry,
+    height: Pixels,
+    tab_index: isize,
+    label_hot: bool,
     this: WeakEntity<TokensModal>,
 ) -> impl IntoElement {
     let token = entry.token;
-    let group_name: SharedString = format!("token-pill-{token}").into();
-    let pill_id: SharedString = format!("token-pill-{token}").into();
+    // Sanitize `{}` out of element ids.
+    let key: SharedString = token
+        .trim_matches(|c| c == '{' || c == '}')
+        .to_string()
+        .into();
+    let pill_id: SharedString = format!("token-pill-{key}").into();
+    let label_id: SharedString = format!("token-pill-label-{key}").into();
+    let label_ink = if label_hot {
+        tokens::ink_2()
+    } else {
+        tokens::ink_3()
+    };
     // .token-pill-card — styles.css:1041-1072
     v_flex()
         .id(pill_id)
-        .group(group_name.clone())
+        .tab_index(tab_index)
         .relative()
         .flex_1()
         .min_w(px(190.))
+        .h(height)
         .items_start()
         .gap(px(3.))
         .px(px(10.))
@@ -579,29 +545,75 @@ fn token_pill(
                 .border_color(tokens::accent())
                 .top(px(-1.))
         })
-        .on_click(move |_, window, cx| {
-            if let Some(entity) = this.upgrade() {
-                entity.update(cx, |modal, cx| {
-                    modal.insert_and_close(token, window, cx);
-                });
+        .focus_visible(|s| {
+            s.shadow(tokens::focus_visible_shadows(tokens::surface_2()))
+        })
+        .on_hover({
+            let this = this.clone();
+            move |hovered, _, cx| {
+                if let Some(entity) = this.upgrade() {
+                    entity.update(cx, |modal, cx| {
+                        let next = if *hovered { Some(token) } else { None };
+                        if modal.hovered_token != next {
+                            // Clear only when leaving this pill (not when moving
+                            // to another pill that will set itself).
+                            if *hovered {
+                                modal.hovered_token = Some(token);
+                                cx.notify();
+                            } else if modal.hovered_token == Some(token) {
+                                modal.hovered_token = None;
+                                cx.notify();
+                            }
+                        }
+                    });
+                }
+            }
+        })
+        .on_click({
+            let this = this.clone();
+            move |_, window, cx| {
+                if let Some(entity) = this.upgrade() {
+                    entity.update(cx, |modal, cx| {
+                        modal.insert_and_close(token, window, cx);
+                    });
+                }
+            }
+        })
+        // Explicit Enter/Space (rule 21). GPUI also maps these on focused
+        // clickable tab stops; keep both paths for synthetic-input hosts.
+        .on_key_down({
+            let this = this.clone();
+            move |ev, window, cx| {
+                let key = ev.keystroke.key.as_str();
+                if (key == "enter" || key == "space") && !ev.keystroke.modifiers.modified() {
+                    if let Some(entity) = this.upgrade() {
+                        entity.update(cx, |modal, cx| {
+                            modal.insert_and_close(token, window, cx);
+                        });
+                    }
+                    cx.stop_propagation();
+                }
             }
         })
         .child(
             // code — styles.css:1059-1064
+            // 11.5 × 1.5 = 17.25 → 17px line box (rule 23).
             div()
                 .font_family(tokens::FONT_MONO)
                 .text_size(px(11.5))
+                .line_height(px(17.))
                 .font_weight(FontWeight::BOLD)
                 .text_color(tokens::accent_ink())
                 .child(token),
         )
         .child(
             // span — styles.css:1065-1071
+            // Rule 24: stable id + hovered_token drives INK_2 on pill hover.
             div()
+                .id(label_id)
                 .text_size(px(11.))
-                .text_color(tokens::ink_3())
-                .line_height(relative(1.3))
-                .group_hover(group_name, |s| s.text_color(tokens::ink_2()))
+                .text_color(label_ink)
+                .line_height(px(14.))
                 .child(entry.label),
         )
 }
