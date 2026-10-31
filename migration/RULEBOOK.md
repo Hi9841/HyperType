@@ -220,7 +220,8 @@ thumb; drag emits live value, release emits commit), `value_edit`
 empty or NaN reverts, App.tsx:358-373), `field` frame (.studio-field with the
 3px RING_SOFT focus ring), `hook_badge` (.hook-status-badge), `modal_frame`
 (.settings-modal-backdrop/.settings-modal-card/.settings-modal-header with
-close button; fade in 150 ms; click on backdrop closes; Escape closes),
+close button; fade in 150 ms; with close button; fade in 150 ms; click on backdrop closes; Escape does
+NOT close: the spec has no Escape handler on either modal, A4),
 button styles used in more than one file.
 
 Text inputs: Kit `Input` / `Textarea` with `appearance(false)` inside our
@@ -305,6 +306,24 @@ Brand mark: keep `assets/logo.png` (`assets::logo()`), 18x18. Paused =
    plus in the GPU border fast path (`shaders.wgsl:669-675`). Draw them as
    two stacked filled circles (outer = border color, inner = fill, inset
    1px), not as `border_1` + `rounded_full`.
+21. Keyboard focus parity: every spec `<button>`, `<input>`, `<textarea>` is
+   a tab stop in DOM order (Tab / Shift+Tab); a focused button activates on
+   Enter and Space; disabled controls are skipped; the focus-visible ring
+   (rule 3) shows for keyboard focus only. No extra shortcuts (no Escape to
+   close modals, no Ctrl+S) unless the spec has them.
+22. A `TextRun` carries color and font only. Inline elements with a box
+   (background, padding, radius, other font size), e.g. `.tokens-catalog-intro
+   code`, are separate elements in a wrapping flex row, not text runs.
+23. Line boxes: GPUI rounds line heights to whole pixels; Chromium keeps the
+   fraction, so stacked rows drift. Set explicit line heights or element
+   heights so every row start matches the reference within 1px, measured
+   on the last row of the region.
+24. `group_hover` / hover styles on a text child apply only when that child
+   is a stateful element: give it a stable id.
+25. A scroll area whose content overflows shows a scrollbar at rest
+   (Chromium classic scrollbars on Windows): Kit scrollbar with
+   `ScrollbarMode::Always`, overlaid in the 15px gutter the reference
+   reserves. D5 covers only the thumb and track look.
 10. Scroll areas (`overflow-y: auto`) -> `div().id(..).overflow_y_scroll()`
    (track a `ScrollHandle` where needed). Do not invent a `scrollable()`
    helper. Scrollbar look follows D5.
@@ -387,6 +406,10 @@ S7a runs now. S7b after S5 and S7a merge.
 - 2026-10-31 A3: from the S1 verification review (grok-4.7 xhigh): rules
   17-20 (Kit Input padding/height, unclamped spring, CSS keyword easings,
   small bordered circles) and the region acceptance rule in section 10.
+- 2026-10-31 A4: from the S6 review (grok-4.7 xhigh): spec has no Escape
+  handler on modals (section 5 corrected: Escape does not close); rules
+  21-25 (keyboard focus parity, inline boxes are elements, fractional line
+  heights, group hover needs an id, scrollbar visible at rest).
 
 ## Deviation log
 
