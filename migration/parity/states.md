@@ -14,13 +14,20 @@ After each state's actions, the reference capture:
 2. Waits until no finite animation or transition is running
    (`document.getAnimations()`).
 3. Waits two animation frames.
-4. Takes the screenshot.
+4. Writes `reference/<state>.boxes.json` (element boxes and text line rects).
+5. Takes the screenshot.
 
 GPUI parity mode must show the same frozen frame for infinite animations
 (recorder pulse at t=0). See `TODO(port)` in `crates/app/src/parity.rs`.
 
 GPUI capture waits for two consecutive identical window bitmaps (with a
 timeout) instead of a fixed sleep, so mid-transition frames are not saved.
+
+Use `bun run boxes` to get exact target geometry from the SolidJS reference.
+Match element y and height within 1 px. The boxes file records
+`getBoundingClientRect()` for every visible element and
+`Range.getClientRects()` for each text line box, so CSS line-box height is a
+number and not a guess.
 
 ## Browser mock status (parity must match)
 

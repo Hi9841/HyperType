@@ -5,6 +5,7 @@
   "scripts": {
     "capture-reference": "node --experimental-strip-types scripts/capture-reference.ts",
     "capture-gpui": "node --experimental-strip-types scripts/capture-gpui.ts",
+    "boxes": "node --experimental-strip-types scripts/boxes.ts",
     "diff": "node --experimental-strip-types scripts/diff.ts",
     "run": "node --experimental-strip-types scripts/run.ts",
     "validate": "node --experimental-strip-types scripts/validate.ts"

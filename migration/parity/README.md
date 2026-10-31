@@ -24,10 +24,15 @@ serves `dist/` on :1420. `reference/meta.json` records git HEAD and whether
 ```bash
 bun run capture-reference
 bun run capture-gpui -- --pid <pid> --state default-selected
+bun run boxes -- <state> [--grep <class-or-text>] [--region x,y,w,h]
 bun run diff
 bun run run -- default-selected
 bun run validate
 ```
+
+`capture-reference` also writes `reference/<state>.boxes.json` with exact
+element boxes and text line rects (CSS px). Use `bun run boxes` to print a
+compact table for a state. Match GPUI element y and height within 1 px.
 
 ## Parity binary
 

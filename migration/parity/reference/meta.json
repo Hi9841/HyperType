@@ -7,7 +7,7 @@
     "height": 640
   },
   "deviceScaleFactor": 1,
-  "date": "2026-10-30T22:26:38.786Z",
+  "date": "2026-10-31T02:26:43.517Z",
   "states": [
     "default-selected",
     "row-hover",
@@ -21,8 +21,8 @@
     "tokens-modal",
     "save-disabled"
   ],
-  "gitCommit": "137ac571c0c8f360a8d7db7340fbd81975edea59",
-  "gitDescribe": "v1.1.6-15-g137ac57-dirty",
+  "gitCommit": "dcba7cc70e01c4e46761dcc3838606413f7dff94",
+  "gitDescribe": "v1.1.6-35-gdcba7cc-dirty",
   "srcDirty": false,
   "infiniteAnimFreezeMs": 0,
   "note": "Edge missing; Chrome/Chromium CDP fallback; rebuilt dist before capture; animations settled"

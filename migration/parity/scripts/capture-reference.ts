@@ -155,10 +155,210 @@ async function driveState(page: Page, state: AutoState): Promise<void> {
   }
 }
 
+type BoxRect = { x: number; y: number; width: number; height: number };
+
+type ElementBox = {
+  selector: string;
+  tag: string;
+  id: string;
+  classList: string[];
+  text: string;
+  rect: BoxRect;
+  style: {
+    fontFamily: string;
+    fontSize: string;
+    fontWeight: string;
+    lineHeight: string;
+    letterSpacing: string;
+    paddingTop: string;
+    paddingRight: string;
+    paddingBottom: string;
+    paddingLeft: string;
+    borderTopWidth: string;
+    borderRightWidth: string;
+    borderBottomWidth: string;
+    borderLeftWidth: string;
+    borderTopColor: string;
+    borderRightColor: string;
+    borderBottomColor: string;
+    borderLeftColor: string;
+    backgroundColor: string;
+    color: string;
+    borderRadius: string;
+    opacity: string;
+    boxShadow: string;
+  };
+};
+
+type TextNodeBox = {
+  parentSelector: string;
+  text: string;
+  rects: BoxRect[];
+};
+
+type BoxesFile = {
+  state: string;
+  viewport: { width: number; height: number };
+  elements: ElementBox[];
+  textNodes: TextNodeBox[];
+};
+
+/** Collect exact element and text-line geometry from the live page. */
+async function collectBoxes(page: Page, state: string): Promise<BoxesFile> {
+  return page.evaluate((stateName: string) => {
+    const rectOf = (r: DOMRectReadOnly): BoxRect => ({
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      height: r.height,
+    });
+
+    const cssPath = (el: Element): string => {
+      const parts: string[] = [];
+      let node: Element | null = el;
+      while (node && node.nodeType === 1) {
+        const tag = node.tagName.toLowerCase();
+        if (tag === "html") {
+          parts.unshift("html");
+          break;
+        }
+        let part = tag;
+        const id = (node as HTMLElement).id;
+        if (id) {
+          part += `#${CSS.escape(id)}`;
+        }
+        const classes = [...node.classList]
+          .filter((c) => c.length > 0)
+          .map((c) => CSS.escape(c));
+        if (classes.length > 0) {
+          part += `.${classes.join(".")}`;
+        }
+        const parent = node.parentElement;
+        if (parent) {
+          const sameTag = [...parent.children].filter(
+            (c) => c.tagName === node!.tagName,
+          );
+          if (sameTag.length > 1) {
+            part += `:nth-of-type(${sameTag.indexOf(node) + 1})`;
+          }
+        }
+        parts.unshift(part);
+        if (id) break;
+        node = parent;
+      }
+      return parts.join(" > ");
+    };
+
+    const ownText = (el: Element): string => {
+      let out = "";
+      for (const child of el.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          out += child.textContent ?? "";
+        }
+      }
+      return out.slice(0, 60);
+    };
+
+    const isVisible = (el: Element, cs: CSSStyleDeclaration): boolean => {
+      if (cs.display === "none" || cs.visibility === "hidden") return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+
+    const elements: ElementBox[] = [];
+    const all = document.querySelectorAll("*");
+    for (const el of all) {
+      const cs = getComputedStyle(el);
+      if (!isVisible(el, cs)) continue;
+      const r = el.getBoundingClientRect();
+      elements.push({
+        selector: cssPath(el),
+        tag: el.tagName.toLowerCase(),
+        id: (el as HTMLElement).id || "",
+        classList: [...el.classList],
+        text: ownText(el),
+        rect: rectOf(r),
+        style: {
+          fontFamily: cs.fontFamily,
+          fontSize: cs.fontSize,
+          fontWeight: cs.fontWeight,
+          lineHeight: cs.lineHeight,
+          letterSpacing: cs.letterSpacing,
+          paddingTop: cs.paddingTop,
+          paddingRight: cs.paddingRight,
+          paddingBottom: cs.paddingBottom,
+          paddingLeft: cs.paddingLeft,
+          borderTopWidth: cs.borderTopWidth,
+          borderRightWidth: cs.borderRightWidth,
+          borderBottomWidth: cs.borderBottomWidth,
+          borderLeftWidth: cs.borderLeftWidth,
+          borderTopColor: cs.borderTopColor,
+          borderRightColor: cs.borderRightColor,
+          borderBottomColor: cs.borderBottomColor,
+          borderLeftColor: cs.borderLeftColor,
+          backgroundColor: cs.backgroundColor,
+          color: cs.color,
+          borderRadius: cs.borderRadius,
+          opacity: cs.opacity,
+          boxShadow: cs.boxShadow,
+        },
+      });
+    }
+
+    const textNodes: TextNodeBox[] = [];
+    const walker = document.createTreeWalker(
+      document.body ?? document.documentElement,
+      NodeFilter.SHOW_TEXT,
+    );
+    let textNode = walker.nextNode();
+    while (textNode) {
+      const raw = textNode.textContent ?? "";
+      if (raw.trim().length > 0) {
+        const parent = textNode.parentElement;
+        if (parent) {
+          const pcs = getComputedStyle(parent);
+          if (pcs.display !== "none" && pcs.visibility !== "hidden") {
+            const range = document.createRange();
+            range.selectNodeContents(textNode);
+            const clientRects = [...range.getClientRects()].map(rectOf);
+            const nonZero = clientRects.filter(
+              (r) => r.width > 0 && r.height > 0,
+            );
+            if (nonZero.length > 0) {
+              textNodes.push({
+                parentSelector: cssPath(parent),
+                text: raw.slice(0, 60),
+                rects: nonZero,
+              });
+            }
+          }
+        }
+      }
+      textNode = walker.nextNode();
+    }
+
+    return {
+      state: stateName,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+      elements,
+      textNodes,
+    };
+  }, state);
+}
+
 async function captureState(page: Page, state: AutoState): Promise<void> {
   console.log(`Capturing reference: ${state}`);
   await driveState(page, state);
   await settleForScreenshot(page);
+  const boxes = await collectBoxes(page, state);
+  const boxesOut = join(REFERENCE_DIR, `${state}.boxes.json`);
+  writeFileSync(boxesOut, JSON.stringify(boxes, null, 2));
+  console.log(
+    `  -> ${boxesOut} (${boxes.elements.length} elements, ${boxes.textNodes.length} text nodes)`,
+  );
   const out = join(REFERENCE_DIR, `${state}.png`);
   await page.screenshot({ path: out, type: "png" });
   console.log(`  -> ${out}`);
