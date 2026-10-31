@@ -153,3 +153,42 @@ in `task_plan.md`.
   temp cleanup on launch failure. Not yet executed: 204 / dynamic / size /
   pub_date / 404 local cases.
 - Verification review r2 (grok-4.7 xhigh): hypertype-gpui-s7a-review-r2.
+
+## 2026-10-31 - S1 review r1 ruled, fix round running
+- grok-4.7 xhigh review of 8b567fc: VERDICT CHANGES, 9 major, 8 minor, 2 nit.
+  Confirmed O2 (logo 128px drawn at 18px, no mipmaps) and O3 (D2). Corrected
+  O1: the dark ring exists (my sample was 1px shifted); the real defect is
+  the glow: GPUI blur_radius is a Gaussian sigma (CSS 6px -> sigma 3.96).
+  Also: drag area too small, icon hover color blocked, segmented/switch
+  motion ids shared or snapping, slider loses drags outside its box,
+  value_edit metrics, modal fade never runs, Shell observer overwrites Status.
+- Rulings: accept 1-18; 19 no change.
+- A2 committed a53ff5f: RULEBOOK section 7 rules 11-16 (blur->sigma, motion
+  ids, enter animations, non-hover transitions required, drag capture,
+  pre-scaled PNGs, centering remainder).
+- Fix round: grok-4.5 high, hypertype-gpui-s1-fix-r1, wt/s1, new commit.
+
+## 2026-10-31 - S7a verification review r2, fix round 2
+- grok-4.7 xhigh r2 (ended without a final message; result read from its
+  thread): 18/20 fixed, 2 partial; executed 204, dynamic feed, lying
+  Content-Length, 512 MiB cap, pub_date, missing target, 404 text, 15 s
+  deadline against a local server in %TEMP%\hypertype-updater-review.
+  New: redirect off-by-one (ureq stops at 9), ProxyOverride loses to env
+  proxy, raw version in error text, body timeout shown as I/O error,
+  NO_PROXY ignored, IPv6 host parse. All accepted.
+- Fix round 2: grok-4.5 high, hypertype-gpui-s7a-fix-r2, wt/s7a.
+- Process note: delegated agents sometimes end without a final message;
+  always read the child thread (t3_thread_read, view messages) for results.
+
+## 2026-10-31 - S7a merged
+- Fix round 2 commit 498a041: redirects(11) = 10 followed; SystemProxy
+  {Proxy, Direct, Unset} with env proxy only for Unset; NO_PROXY; IPv6
+  host; URL-free version error; body timeout -> "timed out". Proven with
+  the reviewer's local server repros (redir10 ok, redir11 fail, NO_PROXY
+  direct, version URL hidden, slow body timed out at 15.1 s) + live probes.
+- Coordinator reviewed the r2 diff (117 lines) instead of a third Grok
+  round: every item had an executed repro from the r2 reviewer's server.
+- Rebased onto main and fast-forwarded: 184dd5f, 97751cc, 737ca73. Clippy
+  pass on main. Pushed.
+- S7b (UI wiring) must: run updater calls on a worker thread; before
+  relaunch/installer exit, release the instance guard and stop the hook.
