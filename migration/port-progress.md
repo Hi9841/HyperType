@@ -445,3 +445,18 @@ in `task_plan.md`.
 - S6 intro: rebuild with few segments ("Click ... like ", chip, " or flags ",
   "like ", chip, ".") after the kern fix lands.
 - S5 started: worktree wt/s5, port/s5-settings from 25a9b42.
+
+## 2026-10-31 - S5 settings done, under review
+- ba89727 (settings_modal.rs, 1159 lines): all 9 rows, footer, 1.5 s poll,
+  background repair/elevate, optimistic setters, tab_index 0, Kit scrollbar
+  Always. Card 48/544 matches; card region 6.379/16.667 %. Live: engine,
+  insert mode, paste combo, sliders -> temp settings.json. Value-edit typing
+  not driven (harness); login + run-as-admin by code only (by design).
+  Requests: modal_frame no-Escape + overflow_hidden (S6 has them),
+  SettingsModal::new(window) (inputs today created lazily in render).
+- Coordinator side-by-side: structure matches; rows drift up 2/4/6px going
+  down (value_edit rows: ref pref-row h 58.3 vs 56.5).
+- Process: S5 and S2 wrote captures into the MAIN checkout's gitignored
+  parity/gpui/ (shared folder). briefs.md now says: outputs stay in the
+  worktree or %TEMP%; only the boxes CLI runs from main.
+- Review r1: grok-4.7 xhigh, hypertype-gpui-s5-review-r1.
