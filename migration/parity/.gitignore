@@ -7,3 +7,4 @@ gpui/
 diff/
 zooms/
 package-lock.json
+scripts/_*
