@@ -551,3 +551,19 @@ in `task_plan.md`.
   addr removed; + Escape -> unchanged.
 - Lesson for later slices: fractional CSS boxes need Chromium half-up
   rounding emulation on GPUI (it snaps toward zero).
+
+## 2026-10-31 - S5 merged; shrink + gutter fixes
+- S5 rebased (f9f12fb) + coordinator fix 429a3b8: rows flex_shrink_0 (Taffy
+  squeezed them to fit the scroll body: that was the 2/4/6px drift) with
+  heights on Chromium's rounded grid -> separators 171/241/330/402/474 exact;
+  value-edit inputs created in new(); render writes a value-edit only when
+  its status value changes (before, Enter's blur re-sync undid the typed
+  value, so nothing saved). Live: words 999+Enter -> 100 saved; WPM
+  999+Enter -> 999 saved (temp settings.json; real log 8025 -> 8025).
+  Card 6.753/14.171 (from 8.495/21.476). MERGED.
+- 3fd...: sidebar rows + token groups flex_shrink_0 (A9 rule 23b); sidebar
+  list reserves a 15px scrollbar gutter while overflowing. 15-snippet seed:
+  row tops stay 178/241/305/368/432/495/559/622; scrollbar in the gutter.
+  Regression parity unchanged (sidebar 2.299/5.835 ..., tokens 5.624/13.876).
+- ALL UI slices merged: S1 S2 S4 S5 S6 + S7a. Next: S7b update UI glue,
+  then full parity + scenario sweep, release build metrics, Phase 6.
