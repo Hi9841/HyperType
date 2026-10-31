@@ -27,7 +27,8 @@ const TARGET_FALLBACK: &str = "windows-x86_64";
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_DOWNLOAD_BYTES: usize = 512 * 1024 * 1024;
-const MAX_REDIRECTS: u32 = 10;
+// ureq counts one short; 11 here = 10 followed redirects (reqwest default)
+const MAX_REDIRECTS: u32 = 11;
 const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -93,9 +94,13 @@ pub fn check_with(current_version: &str) -> Result<Option<UpdateInfo>, String> {
         return Err(format!("update check failed: HTTP {}", response.status()));
     }
 
-    let body = response
-        .into_string()
-        .map_err(|_| "update check failed: I/O error".to_string())?;
+    let body = response.into_string().map_err(|e| {
+        if io_timed_out(&e) {
+            "update check failed: timed out".to_string()
+        } else {
+            "update check failed: I/O error".to_string()
+        }
+    })?;
     let feed = parse_feed_json(&body)?;
 
     // Resolve platform BEFORE version comparison (Tauri updater.rs:576–582).
@@ -283,7 +288,8 @@ fn resolve_platform(feed: &Feed) -> Result<Platform, String> {
 
 fn parse_version(raw: &str) -> Result<Version, String> {
     // Tauri updater.rs:1520 — only strip a leading `v`, no other trim.
-    Version::parse(raw.trim_start_matches('v')).map_err(|e| format!("bad version '{raw}': {e}"))
+    // Do not embed the raw feed field (may contain URLs / tokens).
+    Version::parse(raw.trim_start_matches('v')).map_err(|_| "bad version in update feed".to_string())
 }
 
 // --- HTTP agent -------------------------------------------------------------
@@ -318,19 +324,37 @@ fn build_agent(kind: AgentKind, target_url: &str) -> ureq::Agent {
     builder.build()
 }
 
-/// System proxy like Tauri's default `system-proxy` feature.
-///
-/// Reads the Windows per-user Internet Settings proxy, then falls back to
-/// `HTTPS_PROXY` / `HTTP_PROXY`. PAC / WinHTTP auto-detect scripts are out of scope.
-fn resolve_proxy(target_url: &str) -> Option<ureq::Proxy> {
-    #[cfg(windows)]
-    if let Some(proxy) = windows_user_proxy(target_url) {
-        return Some(proxy);
-    }
-    env_proxy()
+/// Registry / system proxy outcome. Env proxy is used only for [`SystemProxy::Unset`].
+#[cfg(windows)]
+enum SystemProxy {
+    Proxy(ureq::Proxy),
+    /// ProxyEnable=1 and the host matches ProxyOverride (including `<local>`).
+    Direct,
+    /// ProxyEnable=0 or no ProxyServer.
+    Unset,
 }
 
-fn env_proxy() -> Option<ureq::Proxy> {
+/// System proxy like Tauri's default `system-proxy` feature.
+///
+/// Reads the Windows per-user Internet Settings proxy. Env proxy
+/// (`HTTPS_PROXY` / `HTTP_PROXY`) is used only when the registry result is
+/// unset. PAC / WinHTTP auto-detect scripts are out of scope.
+fn resolve_proxy(target_url: &str) -> Option<ureq::Proxy> {
+    #[cfg(windows)]
+    match windows_user_proxy(target_url) {
+        SystemProxy::Proxy(proxy) => return Some(proxy),
+        SystemProxy::Direct => return None,
+        SystemProxy::Unset => {}
+    }
+    env_proxy(target_url)
+}
+
+fn env_proxy(target_url: &str) -> Option<ureq::Proxy> {
+    if let Some(host) = url_host(target_url)
+        && env_no_proxy(&host)
+    {
+        return None;
+    }
     for key in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
         if let Ok(val) = std::env::var(key) {
             if val.is_empty() {
@@ -344,8 +368,32 @@ fn env_proxy() -> Option<ureq::Proxy> {
     None
 }
 
+/// Honor `NO_PROXY` / `no_proxy`: comma-separated hosts, `*`, leading-dot suffixes.
+fn env_no_proxy(host: &str) -> bool {
+    let Ok(list) = std::env::var("NO_PROXY").or_else(|_| std::env::var("no_proxy")) else {
+        return false;
+    };
+    let host = host.to_ascii_lowercase();
+    for token in list.split(',') {
+        let token = token.trim().to_ascii_lowercase();
+        if token.is_empty() {
+            continue;
+        }
+        if token == "*" {
+            return true;
+        }
+        if token == host {
+            return true;
+        }
+        if token.starts_with('.') && host.ends_with(&token) {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(windows)]
-fn windows_user_proxy(target_url: &str) -> Option<ureq::Proxy> {
+fn windows_user_proxy(target_url: &str) -> SystemProxy {
     use windows::Win32::System::Registry::{
         HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, RegCloseKey, RegOpenKeyExW,
     };
@@ -365,32 +413,38 @@ fn windows_user_proxy(target_url: &str) -> Option<ureq::Proxy> {
     }
     .is_err()
     {
-        return None;
+        return SystemProxy::Unset;
     }
 
     let enable = read_reg_dword(key, w!("ProxyEnable")).unwrap_or(0);
     if enable == 0 {
         let _ = unsafe { RegCloseKey(key) };
-        return None;
+        return SystemProxy::Unset;
     }
 
     let server = match read_reg_sz(key, w!("ProxyServer")) {
         Some(s) if !s.is_empty() => s,
         _ => {
             let _ = unsafe { RegCloseKey(key) };
-            return None;
+            return SystemProxy::Unset;
         }
     };
     let override_list = read_reg_sz(key, w!("ProxyOverride")).unwrap_or_default();
     let _ = unsafe { RegCloseKey(key) };
 
-    let host = url_host(target_url)?;
-    if proxy_bypass(&override_list, &host) {
-        return None;
+    if let Some(host) = url_host(target_url)
+        && proxy_bypass(&override_list, &host)
+    {
+        return SystemProxy::Direct;
     }
 
-    let proxy_addr = parse_proxy_server(&server, target_url.starts_with("https"))?;
-    ureq::Proxy::new(&proxy_addr).ok()
+    let Some(proxy_addr) = parse_proxy_server(&server, target_url.starts_with("https")) else {
+        return SystemProxy::Unset;
+    };
+    match ureq::Proxy::new(&proxy_addr) {
+        Ok(proxy) => SystemProxy::Proxy(proxy),
+        Err(_) => SystemProxy::Unset,
+    }
 }
 
 #[cfg(windows)]
@@ -511,8 +565,15 @@ fn url_host(url: &str) -> Option<String> {
     let rest = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))?;
-    let host = rest.split('/').next()?.split('@').next_back()?;
-    let host = host.split(':').next()?.trim();
+    let authority = rest.split('/').next()?.split('@').next_back()?;
+    // IPv6 literals: `[::1]:port` → `::1`
+    let host = if let Some(inner) = authority.strip_prefix('[') {
+        let end = inner.find(']')?;
+        &inner[..end]
+    } else {
+        authority.split(':').next()?
+    };
+    let host = host.trim();
     if host.is_empty() {
         None
     } else {
@@ -583,7 +644,7 @@ fn transport_timed_out(t: &ureq::Transport) -> bool {
     let mut src = std::error::Error::source(t);
     while let Some(e) = src {
         if let Some(ioe) = e.downcast_ref::<std::io::Error>()
-            && ioe.kind() == std::io::ErrorKind::TimedOut
+            && io_timed_out(ioe)
         {
             return true;
         }
@@ -594,6 +655,14 @@ fn transport_timed_out(t: &ureq::Transport) -> bool {
         src = e.source();
     }
     false
+}
+
+fn io_timed_out(e: &std::io::Error) -> bool {
+    if e.kind() == std::io::ErrorKind::TimedOut {
+        return true;
+    }
+    let lower = e.to_string().to_ascii_lowercase();
+    lower.contains("timeout") || lower.contains("timed out")
 }
 
 // --- download ---------------------------------------------------------------
@@ -639,7 +708,7 @@ fn download_bytes(
     let limit = max_download_bytes();
     loop {
         let n = reader.read(&mut chunk).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::TimedOut {
+            if io_timed_out(&e) {
                 "download failed: timed out".to_string()
             } else {
                 "download failed: I/O error".to_string()
