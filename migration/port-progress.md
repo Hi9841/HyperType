@@ -333,3 +333,17 @@ in `task_plan.md`.
   Reviewed by the coordinator (judge tooling, no app code).
 - Note: settings modal has 9 pref-rows (brief said 8; agent was right).
 - A6: boxes are the geometry target in RULEBOOK section 10 and briefs.md.
+
+## 2026-10-31 - S6 fix round 1 done; verification r2 running
+- 92f412f: intro chips as elements, Kit scrollbar Always, row starts
+  191/251/312/372 via alternating pill heights 52/53, label hover via a
+  hovered_token state (group names with braces failed), no Escape, tab
+  stops, additive modal_frame_sized (modal_frame unchanged). Card region
+  5.96 / 19.93 %. Enter/Space wired but not delivered by SendInput.
+- Coordinator zoom: K1 intro line break differs (GPUI breaks before "or
+  flags"; agent hand-placed the break because line 1 overflowed), K2 the
+  committed capture shows a hovered pill (pointer left over the window),
+  K3 some rows ~1px high.
+- Judge TODO: the run script must park the pointer outside the window
+  before each capture (K2).
+- Verification r2: grok-4.7 xhigh, hypertype-gpui-s6-review-r2.
