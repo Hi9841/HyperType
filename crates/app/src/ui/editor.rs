@@ -34,6 +34,8 @@ pub struct Editor {
     form_success: String,
     trigger_input: Entity<InputState>,
     expansion: Entity<TextareaState>,
+    /// Focus target for the shortcut recorder (App.tsx:433 focusout cancel).
+    recorder_focus: FocusHandle,
     success_task: Option<Task<()>>,
     recording_subs: Vec<Subscription>,
     _observe: Subscription,
@@ -46,9 +48,9 @@ impl Editor {
         let trigger_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder(TRIGGER_PLACEHOLDER)
         });
-        let expansion = cx.new(|cx| {
-            TextareaState::new(window, cx).placeholder(EXPANSION_PLACEHOLDER)
-        });
+        // Kit placeholder does not soft-wrap; empty Kit string + painted wrap (finding 2).
+        let expansion = cx.new(|cx| TextareaState::new(window, cx).placeholder(""));
+        let recorder_focus = cx.focus_handle().tab_stop(true);
 
         let _observe = studio
             .upgrade()
@@ -94,6 +96,7 @@ impl Editor {
             form_success: String::new(),
             trigger_input,
             expansion,
+            recorder_focus,
             success_task: None,
             recording_subs: Vec::new(),
             _observe,
@@ -122,8 +125,7 @@ impl Editor {
         self.expansion.update(cx, |state, cx| {
             state.set_value(snippet.expansion.as_str(), window, cx);
         });
-        // App.tsx selectSnippet does not focus the form (225-234).
-        window.blur(cx);
+        // App.tsx selectSnippet does not move focus (225-234); do not blur.
         cx.notify();
     }
 
@@ -288,10 +290,28 @@ impl Editor {
         self.form_error.clear();
         self.recording_subs.clear();
 
+        // Focus the recorder so it shows `.studio-field:focus` RING_SOFT (finding 6)
+        // before blur listeners are armed (finding 7).
+        self.recorder_focus.focus(window, cx);
+
         let weak = cx.weak_entity();
+        // Every key is consumed while recording (App.tsx:407); bare "V" must not type.
+        // Tab is left alone so focus can move; recorder blur then cancels (finding 7).
         let key_sub = cx.intercept_keystrokes({
             let weak = weak.clone();
             move |event, window, cx| {
+                let recording = weak
+                    .upgrade()
+                    .map(|e| e.read(cx).recording)
+                    .unwrap_or(false);
+                if !recording {
+                    return;
+                }
+                if event.keystroke.key == "tab" {
+                    return;
+                }
+                window.prevent_default();
+                cx.stop_propagation();
                 let _ = weak.update(cx, |this, cx| {
                     if !this.recording {
                         return;
@@ -307,18 +327,21 @@ impl Editor {
                             state.focus(window, cx);
                         });
                     }
+                    // Bare modifiers and non-chord keys: swallowed, no action.
                 });
             }
         });
         self.recording_subs.push(key_sub);
 
-        let focus_sub = cx.on_focus_lost(window, |this, _, cx| {
+        // Tab / any focus move off the recorder cancels (App.tsx:433 focusout).
+        let blur_sub = cx.on_blur(&self.recorder_focus, window, |this, _, cx| {
             if this.recording {
                 this.stop_recording(cx);
             }
         });
-        self.recording_subs.push(focus_sub);
+        self.recording_subs.push(blur_sub);
 
+        // OS window deactivation (App.tsx:433 blur).
         let act_sub = cx.observe_window_activation(window, |this, window, cx| {
             if this.recording && !window.is_window_active() {
                 this.stop_recording(cx);
@@ -417,7 +440,8 @@ impl Editor {
         } else {
             trimmed.split_whitespace().count()
         };
-        let chars = expansion.len();
+        // Displayed length = JS `.length` = UTF-16 code units (RULEBOOK A5).
+        let chars = expansion.encode_utf16().count();
         (lines, words, chars)
     }
 }
@@ -493,7 +517,7 @@ impl Render for Editor {
             .child(self.render_header(&title, sub_hint, freeze, window, cx))
             .child(self.render_trigger_row(field_label, trigger_focused, freeze, window, cx))
             .child(self.render_token_bar(cx))
-            .child(self.render_textarea(expansion_focused))
+            .child(self.render_textarea(expansion_focused, &expansion_text))
             .child(self.render_footer(
                 lines,
                 words,
@@ -508,22 +532,32 @@ impl Render for Editor {
             .when(recording, {
                 let entity = entity.clone();
                 move |this| {
-                    // Full-window click-away cancel (App.tsx:432). Layout offsets:
-                    // sidebar 340 + title bar 42 (styles.css workspace).
+                    // Capture-phase window mouse-down cancel (App.tsx:432). No hitbox
+                    // overlay — canvas only paints so the listener re-registers each
+                    // frame (survives resize). Do not stop propagation.
                     this.child(
-                        div()
-                            .id("chord-cancel-layer")
-                            .absolute()
-                            .left(px(-340.))
-                            .top(px(-42.))
-                            .w(px(960.))
-                            .h(px(640.))
-                            .cursor(CursorStyle::Arrow)
-                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                entity.update(cx, |this, cx| {
-                                    this.stop_recording(cx);
-                                });
-                            }),
+                        canvas(
+                            |_, _, _| (),
+                            move |_, (), window, _cx| {
+                                let entity = entity.clone();
+                                window.on_mouse_event(
+                                    move |_ev: &MouseDownEvent, phase, _window, cx| {
+                                        if phase != DispatchPhase::Capture {
+                                            return;
+                                        }
+                                        entity.update(cx, |this, cx| {
+                                            if this.recording {
+                                                this.stop_recording(cx);
+                                            }
+                                        });
+                                    },
+                                );
+                            },
+                        )
+                        .absolute()
+                        .inset_0()
+                        .w_full()
+                        .h_full(),
                     )
                 }
             })
@@ -552,16 +586,20 @@ impl Editor {
                     .gap(px(0.))
                     .child(
                         // h2 — styles.css:523-528 (letter-spacing omitted D2)
+                        // Explicit 24px line box (16px × 1.5); rule 23.
                         div()
                             .text_size(px(16.))
+                            .line_height(px(24.))
                             .font_weight(FontWeight::BOLD)
                             .text_color(tokens::ink())
                             .child(title.to_string()),
                     )
                     .child(
                         // .canvas-sub-hint — styles.css:529-532
+                        // Explicit 18px line box (12px × 1.5); rule 23.
                         div()
                             .text_size(px(12.))
+                            .line_height(px(18.))
                             .text_color(tokens::ink_2())
                             .child(sub_hint.to_string()),
                     ),
@@ -591,7 +629,7 @@ impl Editor {
         field_label: &str,
         trigger_focused: bool,
         freeze: bool,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         // .trigger-config-row — styles.css:534-538
@@ -606,8 +644,10 @@ impl Editor {
                     .gap(px(4.))
                     .child(
                         // .field-label — styles.css:548-552 (letter-spacing omitted D2)
+                        // Chromium keeps 15.75; GPUI rounds down — pin 16 so trigger y matches.
                         div()
                             .text_size(px(10.5))
+                            .line_height(px(16.))
                             .font_weight(FontWeight::BOLD)
                             .text_color(tokens::ink_3())
                             .child(field_label.to_string()),
@@ -615,7 +655,7 @@ impl Editor {
                     .child(match self.mode {
                         TriggerKind::Text => self.render_trigger_input(trigger_focused),
                         TriggerKind::Shortcut => self
-                            .render_recorder(self.recording, freeze, cx)
+                            .render_recorder(self.recording, freeze, window, cx)
                             .into_any_element(),
                     }),
             )
@@ -646,11 +686,20 @@ impl Editor {
         &self,
         recording: bool,
         freeze: bool,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let entity = cx.entity();
         let trigger = self.trigger.clone();
         let show_chord = !recording && !trigger.is_empty();
+        let focused = self.recorder_focus.is_focused(window);
+        let ring_soft_3 = BoxShadow {
+            color: tokens::ring_soft(),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(3.),
+            inset: false,
+        };
 
         // .studio-field.recorder-btn — styles.css:554-593
         let hint = if show_chord {
@@ -664,6 +713,7 @@ impl Editor {
             // .recorder-hint-text — styles.css:583-586
             div()
                 .text_size(px(12.))
+                .line_height(px(18.))
                 .text_color(tokens::ink_2())
                 .child(if recording {
                     "Press keys on keyboard… Esc cancels"
@@ -675,6 +725,7 @@ impl Editor {
 
         let btn = div()
             .id("recorder-btn")
+            .track_focus(&self.recorder_focus)
             .h(px(34.))
             .px(px(12.))
             .flex()
@@ -682,13 +733,30 @@ impl Editor {
             .w_full()
             .bg(tokens::field())
             .border_1()
-            .border_color(if recording {
+            .border_color(if recording || focused {
                 tokens::accent()
             } else {
                 tokens::line()
             })
             .rounded(px(7.))
             .cursor(CursorStyle::PointingHand)
+            // `.studio-field:focus` 3px RING_SOFT when focused; pulse overrides while live.
+            .when(focused && !(recording && !freeze), {
+                let ring = ring_soft_3.clone();
+                move |this| this.shadow(vec![ring])
+            })
+            .when(recording && freeze && !focused, {
+                let ring = ring_soft_3.clone();
+                move |this| this.shadow(vec![ring])
+            })
+            .focus_visible({
+                let ring = ring_soft_3.clone();
+                move |s| {
+                    let mut shadows = vec![ring];
+                    shadows.extend(tokens::focus_visible_shadows(tokens::field()));
+                    s.shadow(shadows)
+                }
+            })
             .on_click(move |_, window, cx| {
                 entity.update(cx, |this, cx| {
                     this.start_shortcut_recording(window, cx);
@@ -696,7 +764,7 @@ impl Editor {
             })
             .child(hint);
 
-        // listening pulse: 1.2s ease-in-out infinite; freeze at t=0 (no shadow).
+        // listening pulse: 1.2s ease-in-out infinite; freeze at t=0 uses static ring above.
         if recording && !freeze {
             let ease = Easing::EaseInOut;
             btn.with_animation(
@@ -733,8 +801,10 @@ impl Editor {
             .mt(px(2.))
             .child(
                 // .token-bar-label — styles.css:666-669
+                // Explicit 16.5px line box (11 × 1.5); rule 23.
                 div()
                     .text_size(px(11.))
+                    .line_height(px(16.5))
                     .text_color(tokens::ink_3())
                     .child("Insert Token:"),
             )
@@ -766,7 +836,7 @@ impl Editor {
                     });
                 }
             }))
-            .child(token_btn("All Tokens", "View All Tokens & Modifiers", {
+            .child(token_btn_all("View All Tokens & Modifiers", {
                 let entity = entity.clone();
                 move |_, cx| {
                     entity.update(cx, |this, cx| {
@@ -776,9 +846,12 @@ impl Editor {
             }))
     }
 
-    fn render_textarea(&self, focused: bool) -> impl IntoElement {
+    fn render_textarea(&self, focused: bool, expansion_text: &str) -> impl IntoElement {
         // .giant-editor-container — styles.css:688-693
         // .giant-editor-textarea — styles.css:695-714
+        // Kit Medium editor paddings = 10/8 (sizing.rs). Style pads 6/6 → total inset
+        // 16px L/R and 14px top (rule 17). Kit placeholder empty; wrap ourselves.
+        let show_placeholder = expansion_text.is_empty();
         div()
             .id("giant-editor-container")
             .flex_1()
@@ -788,6 +861,7 @@ impl Editor {
             .child(
                 div()
                     .id("giant-editor-frame")
+                    .relative()
                     .flex_1()
                     .min_h_0()
                     .w_full()
@@ -817,13 +891,29 @@ impl Editor {
                             // Kit Input defaults to items_center; CSS textarea is top-aligned.
                             .items_start()
                             .justify_start()
-                            .px(px(16.))
-                            .py(px(14.))
+                            .px(px(6.))
+                            .py(px(6.))
                             .text_size(px(13.5))
                             .line_height(relative(1.6))
                             .text_color(tokens::ink())
                             .font_family(tokens::FONT_UI),
-                    ),
+                    )
+                    .when(show_placeholder, |this| {
+                        this.child(
+                            // Soft-wrapping placeholder at the CSS content origin (14/16).
+                            div()
+                                .id("expansion-placeholder")
+                                .absolute()
+                                .top(px(14.))
+                                .left(px(16.))
+                                .right(px(16.))
+                                .font_family(tokens::FONT_UI)
+                                .text_size(px(13.5))
+                                .line_height(relative(1.6))
+                                .text_color(tokens::ink_3())
+                                .child(EXPANSION_PLACEHOLDER.to_string()),
+                        )
+                    }),
             )
     }
 
@@ -852,8 +942,11 @@ impl Editor {
             .pt(px(4.))
             .child(
                 // .canvas-footer-stats — styles.css:724-731
+                // flex_1 + min_w_0 so a long error truncates and Save stays on-canvas.
                 h_flex()
                     .id("canvas-footer-stats")
+                    .flex_1()
+                    .min_w_0()
                     .items_center()
                     .gap(px(6.))
                     .font_family(tokens::FONT_MONO)
@@ -862,6 +955,7 @@ impl Editor {
                     .child(
                         h_flex()
                             .gap(px(4.))
+                            .flex_shrink_0()
                             .child(
                                 div()
                                     .font_weight(FontWeight::BOLD)
@@ -871,11 +965,15 @@ impl Editor {
                     )
                     .child(
                         // .stat-sep
-                        div().text_color(tokens::line_2()).child("•"),
+                        div()
+                            .flex_shrink_0()
+                            .text_color(tokens::line_2())
+                            .child("•"),
                     )
                     .child(
                         h_flex()
                             .gap(px(4.))
+                            .flex_shrink_0()
                             .child(
                                 div()
                                     .font_weight(FontWeight::BOLD)
@@ -883,10 +981,16 @@ impl Editor {
                             )
                             .child(word_label.to_string()),
                     )
-                    .child(div().text_color(tokens::line_2()).child("•"))
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_color(tokens::line_2())
+                            .child("•"),
+                    )
                     .child(
                         h_flex()
                             .gap(px(4.))
+                            .flex_shrink_0()
                             .child(
                                 div()
                                     .font_weight(FontWeight::BOLD)
@@ -902,10 +1006,16 @@ impl Editor {
                                 .items_center()
                                 .gap(px(4.))
                                 .ml(px(8.))
+                                .min_w_0()
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(tokens::success())
                                 .child(icons::check())
-                                .child(form_success.to_string()),
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .truncate()
+                                        .child(form_success.to_string()),
+                                ),
                         )
                     })
                     .when(!form_error.is_empty(), |this| {
@@ -916,10 +1026,16 @@ impl Editor {
                                 .items_center()
                                 .gap(px(4.))
                                 .ml(px(8.))
+                                .min_w_0()
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(tokens::danger())
                                 .child(icons::close())
-                                .child(form_error.to_string()),
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .truncate()
+                                        .child(form_error.to_string()),
+                                ),
                         )
                     }),
             )
@@ -966,14 +1082,19 @@ fn token_btn(
 ) -> impl IntoElement {
     div()
         .id(SharedString::from(format!("token-btn-{label}")))
+        .tab_index(0)
         .bg(tokens::surface_1())
         .border_1()
         .border_color(tokens::line())
         .text_color(tokens::ink_2())
         .font_family(tokens::FONT_MONO)
         .text_size(px(11.))
+        .line_height(px(16.5))
+        // Chromium border-box: 16.5 LH + 6 pad + 2 border ≈ 24.5; pin 24 for rule 23.
+        .h(px(24.))
+        .flex()
+        .items_center()
         .px(px(8.))
-        .py(px(3.))
         .rounded(px(5.))
         .cursor(CursorStyle::PointingHand)
         .hover(|s| {
@@ -981,7 +1102,42 @@ fn token_btn(
                 .text_color(tokens::white())
                 .bg(tokens::surface_2())
         })
+        .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::bg())))
         .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(label.to_string())
+}
+
+/// `.token-btn-all` — styles.css:979-993 (separate from mono token pills).
+fn token_btn_all(
+    tip: &'static str,
+    on_click: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id("token-btn-all")
+        .tab_index(0)
+        .ml_auto()
+        .bg(tokens::surface_2())
+        .border_1()
+        .border_color(tokens::line_2())
+        .text_color(tokens::accent_ink())
+        .font_family(tokens::FONT_UI)
+        .text_size(px(11.))
+        .line_height(px(16.5))
+        .font_weight(FontWeight::SEMIBOLD)
+        .h(px(24.))
+        .flex()
+        .items_center()
+        .px(px(10.))
+        .rounded(px(5.))
+        .cursor(CursorStyle::PointingHand)
+        .hover(|s| {
+            s.bg(tokens::surface_3())
+                .text_color(tokens::white())
+                .border_color(tokens::accent())
+        })
+        .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::bg())))
+        .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+        .on_click(move |_, window, cx| on_click(window, cx))
+        .child("All Tokens")
 }
