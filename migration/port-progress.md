@@ -347,3 +347,18 @@ in `task_plan.md`.
 - Judge TODO: the run script must park the pointer outside the window
   before each capture (K2).
 - Verification r2: grok-4.7 xhigh, hypertype-gpui-s6-review-r2.
+
+## 2026-10-31 - S1 verification r3 ruled; S1 fix round 3
+- grok-4.7 xhigh r3 of 77af696 (result read from thread): CHANGES.
+  Verified live: click jump + single commit on release, value_edit padding
+  0 and Enter clamp (Kit input CAN be driven by SendInput once the window
+  is active), round dot, button icons, spring peak 1.0204, keyword ease-out,
+  logo pick 18/23/27/36, widget-lab cfg-gated.
+  Blocking: slider move outside the track frozen (is_hovered on a stale
+  captured HitboxId); window controls 1px high (5 blocks clear on a 1px
+  shift) so "defect 0" was false. Also STUDIO text 1px low (coordinator:
+  baseline move = geometry). One idle parity process exited -1 (unexplained).
+- Fix round 3 (grok-4.5 high, hypertype-gpui-s1-fix-r3): slider drag,
+  control row + pill text against `bun run boxes`, idle stability, and
+  rule-21 keyboard focus for ALL shared widgets (segmented, switch, slider
+  keys like input range, buttons) - the queued shared-focus pass.
