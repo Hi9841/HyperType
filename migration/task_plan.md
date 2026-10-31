@@ -6,22 +6,17 @@ that has the same functions, layout, colors, type, motion, and copy as the
 v1.1.8 SolidJS UI, then remove the WebView stack.
 
 ## Current state
-All UI slices are merged on main: S1 foundation, S2+S3 sidebar, S4 editor,
-S5 settings, S6 tokens, S7a updater backend, S7b update UI (b4832d1).
-Phase 5 full-frame sweep recorded (port-progress.md); geometry matched to the
-reference boxes within 1px per slice; remaining differences are D1/D2/D4/D5.
-Grok balance is exhausted; the coordinator works directly (owner choice).
+Phase 6 is complete. v1.2.0 (native GPUI, no web view) is published:
+https://github.com/Hi9841/HyperType/releases/tag/v1.2.0 (tag at 2fd8db0).
+The Tauri/SolidJS stack is removed from the repo (7fc8cc0). Packaging is
+packaging/nsis + packaging/release.ps1 + tools/sign; signing runs in the
+manual Sign release workflow because the key password is unknown (owner
+choice 2026-10-31). Upgrade from the installed v1.1.8 is verified.
 
 ## Next action
-1. Owner visual sign-off on the side-by-side page (shown in chat).
-2. Real-app checks need the installed HyperType stopped (it now runs
-   elevated, PID 19256, so only the owner can quit it): then run the GPUI
-   release build in its place (scripts/dev-run.ps1) and check expansion,
-   tray, close-to-tray, single instance, hotkeys, autostart, RAM, size.
-3. Phase 6 packaging plan (NSIS compatible with the v1.1.8 updater flags
-   /P /UPDATE /R /ARGS, same install path + uninstall key, minisign-signed
-   latest.json, local release per owner memory) - confirm before any
-   release or outward step.
+Optional follow-ups offered to the owner: hover fades (D3), the motion
+judge, scroll feel, the context menu; reformat the pre-existing
+`cargo fmt` drift in crates/app in a separate commit.
 
 ## Scope and constraints
 - Spec = `src/App.tsx`, `src/styles.css`, `src/components/Icons.tsx`,

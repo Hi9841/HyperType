@@ -639,3 +639,26 @@ in `task_plan.md`.
   ready", window shows the owner's 7 real snippets. Owner testing now.
 - Lesson: parity mode must not skip startup paths that real builds run; add
   a real-build smoke launch to every merge gate.
+
+## 2026-10-31 - Phase 6: release v1.2.0 and web stack removal
+- tools/sign (hypertype-sign): verifies or makes tauri-format minisign
+  signatures, writes latest.json (windows-x86_64 + windows-x86_64-nsis).
+  Checked: v1.1.8 real artifacts verify; a changed byte is rejected; a
+  Tauri-generated test key opens with the right password only.
+- packaging/nsis: the v1.1.8 Tauri NSIS template without WebView2, with
+  relative paths and the nsis_tauri_utils plugin vendored; removes the
+  v1.x EBWebView cache on install.
+- Key password unknown (two hidden-prompt attempts rejected by the key;
+  the Tauri CLI gives the same error). Owner chose one manual CI signing
+  job: .github/workflows/sign.yml, run 41190611526 (24 s).
+- Native updater probe against a local feed and then the live feed:
+  signature OK, tamper rejected, 1.2.0 sees no update.
+- Upgrade test over the installed v1.1.8 with /P /UPDATE /R /ARGS:
+  DisplayVersion 1.2.0, exe = build hash, Run key and shortcuts kept,
+  snippets.json/settings.json hashes unchanged, EBWebView cache removed,
+  app relaunched; later autostart instance runs from the install folder.
+- Failed attempts: installer.nsi first kept an absolute English.nsh path
+  (found by rebuilding after src-tauri was deleted; fixed cd4c0f8);
+  release.ps1 lookup broke on gh stderr under PS 5.1 (fixed 2fd8db0).
+- Mistake: `hypertype.exe --version` launched the app from targetelease
+  with real APPDATA; stopped at once; only 4 log lines were added.
