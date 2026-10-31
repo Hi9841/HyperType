@@ -220,8 +220,9 @@ thumb; drag emits live value, release emits commit), `value_edit`
 empty or NaN reverts, App.tsx:358-373), `field` frame (.studio-field with the
 3px RING_SOFT focus ring), `hook_badge` (.hook-status-badge), `modal_frame`
 (.settings-modal-backdrop/.settings-modal-card/.settings-modal-header with
-close button; fade in 150 ms; with close button; fade in 150 ms; click on backdrop closes; Escape does
-NOT close: the spec has no Escape handler on either modal, A4),
+close button; fade in 150 ms; click on backdrop closes; Escape does NOT
+close: the spec has no Escape handler on either modal, A4; a sized variant
+`modal_frame_sized(width, max_height_frac, ..)` serves the 680px catalog),
 button styles used in more than one file.
 
 Text inputs: Kit `Input` / `Textarea` with `appearance(false)` inside our
