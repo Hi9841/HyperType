@@ -192,3 +192,13 @@ in `task_plan.md`.
   pass on main. Pushed.
 - S7b (UI wiring) must: run updater calls on a worker thread; before
   relaunch/installer exit, release the instance guard and stop the hook.
+
+## 2026-10-31 - S1 fix round 1 done, verification running
+- fa2af52 on port/s1-foundation: all 18 items addressed. Title bar parity
+  detail 2.036 -> 1.895 %, fill 5.947 -> 5.000 %. Drag HTCAPTION on the bar,
+  HTCLIENT on buttons (WM_NCHITTEST). Close hover and value_edit Enter/blur
+  checked from code only. Agent says dot core still ~1px high.
+- Coordinator 5x zoom: logo now bright and sharp (match); dot ring looks like
+  a cross and the dot is ~1px high (to rule).
+- Verification review r2: grok-4.7 xhigh, hypertype-gpui-s1-review-r2.
+- Wrote `migration/briefs.md`: S2+S3, S4, S5+S6, S7b scopes for the fan-out.
