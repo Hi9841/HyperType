@@ -402,3 +402,17 @@ in `task_plan.md`.
   blocks: D2 (title/label letter-spacing) + D4. ACCEPTED.
 - Merge order: S1 (r3) -> rebase S4 (shared widget signatures may change)
   -> S6 -> then S2 and S5 start.
+
+## 2026-10-31 - S6 fix round 2; text width investigation
+- 0664a94: per-word wrapping intro, chips h16, intro min_h 39 (pill tops
+  within 1px of boxes), group_hover with ids (hovered_token removed),
+  pills tab_index(0), 52/53 comment. Agent claimed the intro wrap matches.
+- Coordinator fresh capture: region 6.015 / 14.230 %. Zoom REJECTS the wrap
+  claim: GPUI line 2 = "flags like {date:us}.", reference "like {date:us}.".
+  With natural wrapping, GPUI text is >5px wider over the line. Same family
+  of symptom: All Tokens +2px, mono token buttons wider.
+- Hypothesis: systematic advance-width gap from a GPUI shaping setting
+  (kern/liga features, Segoe UI Variable opsz axis, advance rounding).
+  Investigation task: grok-4.5 high, hypertype-gpui-textwidth-r1, in wt/s6,
+  temporary changes reverted, fix delivered as a diff (likely S1 tokens.rs).
+- S6 holds its merge until the text width outcome.
