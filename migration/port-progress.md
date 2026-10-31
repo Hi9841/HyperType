@@ -609,3 +609,20 @@ in `task_plan.md`.
   coordinator click drivers ran; both apps center the same 960x640 window.
   Cannot rule out a stray synthetic click, but Run as Admin sits below the
   fold of its settings list. snippets.json / settings.json untouched.
+
+## 2026-10-31 - Drag reorder checked mid-drag (owner asked)
+- New judge scratch: scripts/_drag-ref.ts (Chromium mid-drag frames, pointer
+  held) + %TEMP%\claude\hold_drag.ps1 (GPUI, pointer held). Outputs in
+  migration/parity/motion/ (gitignored).
+- Found and fixed (351c751): dragged row painted under later rows (spec
+  z-index 10; GPUI paints in tree order) -> placeholder + row painted last
+  inside the list; other rows showed :hover during a drag (spec pointer
+  capture) -> hover suppressed, dragged row keeps hover + grabbing cursor;
+  drop index used Rust round (half away from zero) vs JS Math.round ->
+  floor(x+0.5): a 1.5-row drag up now lands on slot 2 like the original;
+  row delete X double activation removed.
+- Mid-drag frames now match the reference for drag down and drag up.
+- 1d...: removed duplicate Enter/Space handlers on search clear, New Snippet,
+  Export/Import (Enter on Export opened two dialogs). Live keyboard check ok.
+- Not yet verified: animation timing (row slide 130 ms, release behaviour,
+  all other motion) - needs the motion judge.
