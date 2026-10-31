@@ -478,3 +478,18 @@ in `task_plan.md`.
 - Fix round 4 (grok-4.5 high, hypertype-gpui-s1-fix-r4): switch/segmented
   single activation path, kern font features (proven diff), SettingsModal::new
   takes window.
+
+## 2026-10-31 - S2+S3 sidebar done, under review
+- 8538236 (sidebar.rs ~1394 lines + rfd 0.16): search, New/Export/Import
+  (rfd on a background thread), toast, list, rows, empty state, pointer drag
+  reorder with capture, missed-release commit, blur cancel, grip arrows,
+  lock while searching, tab_index 0. Region 0,42,340,598 detail/fill:
+  default 3.97/9.73, row-hover 4.13/10.41, filter 2.72/5.69, no-match
+  1.48/3.92, empty 1.71/4.20. Scenarios pass: search, drag 1->3, keyboard,
+  lock, delete Cancel, export, import; delete OK partial (GPUI prompt).
+- Agent claimed "all D4"; coordinator side-by-side REJECTS: C1 search icon
+  missing, C2 scrollbar painted without overflow, C3 header ~2px high and
+  rows pitch 63 vs 63.5 (drift), C4 delete X opacity hack to check.
+- Review r1: grok-4.7 xhigh, hypertype-gpui-s2-review-r1 (APPDATA + real
+  log line counts required).
+- S1 fix round 4 steered: Sidebar::new also takes window.
