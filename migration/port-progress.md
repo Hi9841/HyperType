@@ -362,3 +362,15 @@ in `task_plan.md`.
   control row + pill text against `bun run boxes`, idle stability, and
   rule-21 keyboard focus for ALL shared widgets (segmented, switch, slider
   keys like input range, buttons) - the queued shared-focus pass.
+
+## 2026-10-31 - S4 verification r2 ruled; S4 fix round 2
+- grok-4.7 xhigh r2 of 6904321 (from thread): CHANGES. Live-verified 8/10:
+  All Tokens, textarea inset + wrapping placeholder, capture listener
+  (right click, token click inserts after cancel, resize), bare V, Esc,
+  chord, recorder ring, blur + WM_ACTIVATE cancel, UTF-16 count (a😀b = 4),
+  footer truncation with Save on canvas, no blur in load(); no listener leak.
+- Blocking: textarea top 2px early (sub-hint pinned 18 vs CSS strut 19.5 ->
+  GPUI rounds to 20; token buttons 24 vs 25); Tab not consumed while
+  recording (spec consumes every key).
+- Correction: my "footer 2px high" note was wrong; footer y matches.
+- Fix round 2: grok-4.5 high, hypertype-gpui-s4-fix-r2.
