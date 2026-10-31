@@ -493,3 +493,19 @@ in `task_plan.md`.
 - Review r1: grok-4.7 xhigh, hypertype-gpui-s2-review-r1 (APPDATA + real
   log line counts required).
 - S1 fix round 4 steered: Sidebar::new also takes window.
+
+## 2026-10-31 - BLOCKED: Grok balance exhausted (HTTP 402)
+- "API error (status 402 Payment Required): Grok Build usage balance
+  exhausted". Failed: S2 review r1 (hypertype-gpui-s2-review-r1), S1 fix
+  round 4 (hypertype-gpui-s1-fix-r4). S5 review r1 still shows running; expect
+  the same failure.
+- S1 round 4 left UNCOMMITTED, correct partial edits in wt/s1 (on 25a9b42):
+  switch + segmented on_key_down removed (single activation via on_click),
+  tokens::font_features_ui() kern=1 on Studio root + mono_zero_advance,
+  SettingsModal::new(studio, window, cx). Missing: Sidebar::new(window),
+  build/clippy, live switch Enter/Space check, title bar re-measure.
+- State of slices: S1 r4 partial (above); S4 accepted (d43f751, waits for S1
+  merge); S6 needs intro segments after kern (0664a94); S2 8538236 needs
+  review + fixes (C1 icon, C2 scrollbar, C3 drift); S5 ba89727 under review
+  (row drift); S7a merged; S7b not started; Phase 6 scope question open.
+- Waiting for the owner: top up Grok, or switch implementers/reviewers.
