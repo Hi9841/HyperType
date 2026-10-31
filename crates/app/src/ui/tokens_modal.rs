@@ -456,6 +456,8 @@ fn category_group(
 
     v_flex()
         .w_full()
+        // Never shrink in the scroll body (rule 23b).
+        .flex_shrink_0()
         .gap(px(8.))
         .child(
             // .token-cat-title — styles.css:1028-1033 (letter-spacing omitted: D2)

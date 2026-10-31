@@ -986,13 +986,18 @@ impl Sidebar {
         // .studio-snippets-list — styles.css:355-362
         // Ref: header ends ~171.5 + pad-top 6 → first row 177.5.
         // Integer GPUI: header h31 ends 172; pt 6 → row at 178 (matches raster).
+        // Chromium's classic scrollbar takes 15px of layout width while the
+        // list overflows (rule 25); the Kit scrollbar is an overlay, so reserve
+        // that gutter on the right. max_offset is from the previous layout.
+        let overflows = scroll.max_offset().y > px(0.);
         let list = v_flex()
             .id("studio-snippets-list")
             .relative()
             .flex_1()
             .min_h_0()
             .pt(px(6.))
-            .px(px(10.))
+            .pl(px(10.))
+            .pr(px(if overflows { 25. } else { 10. }))
             .pb(px(14.))
             .gap(px(4.))
             .overflow_y_scroll()
@@ -1028,9 +1033,6 @@ impl Sidebar {
             ));
         }
 
-        // Rule 25: a scrollbar shows only when the rows overflow (max offset is
-        // from the previous layout, which is stable for this list).
-        let overflows = scroll.max_offset().y > px(0.);
         list.children(rows)
             .when(overflows, |list| {
                 list.child(
@@ -1371,6 +1373,8 @@ fn render_row(
         .when(is_dragging, |this| this.occlude())
         .items_center()
         .gap(px(8.))
+        // Never shrink in the scroll list (rule 23b).
+        .flex_shrink_0()
         .h(px(row_height(index)))
         .px(px(10.))
         .py(px(8.))

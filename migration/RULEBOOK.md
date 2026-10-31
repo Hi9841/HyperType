@@ -334,6 +334,10 @@ Brand mark: keep `assets/logo.png` (`assets::logo()`), 18x18. Paused =
    0.5px per item on GPUI. Place repeated items on the reference pixel grid
    (e.g. alternate 59/60px heights, round header heights up) and check every
    item top against the boxes, not only the first.
+23b. Scroll containers (A9): CSS flex items keep `min-height: auto` and never
+   shrink below their content; Taffy shrinks them to fit a height-limited
+   scroll body. Every direct child of a scrolling flex column gets
+   `.flex_shrink_0()` (settings rows, sidebar rows, token groups).
 24. `group_hover` / hover styles on a text child apply only when that child
    is a stateful element: give it a stable id.
 25. A scroll area whose content overflows shows a scrollbar at rest
@@ -439,6 +443,8 @@ S7a runs now. S7b after S5 and S7a merge.
   (no hand-placed line breaks).
 - 2026-10-31 A8: rule 23a - emulate Chromium half-up rounding for stacked
   fractional boxes (from the S2 sidebar rows).
+- 2026-10-31 A9: rule 23b - children of scrolling flex columns never shrink
+  (found in S5: rows were squeezed to fit the settings body).
 
 ## Deviation log
 
