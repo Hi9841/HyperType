@@ -580,3 +580,32 @@ in `task_plan.md`.
   write (no hypertype-9.9.9-updater-* dir), process alive, button back to
   idle. Parity state update-available shows the "Update v1.1.9" pill.
   Real log 8025 -> 8025.
+
+## 2026-10-31 - Full parity sweep on main (Phase 5)
+- Judge bug fixed (run.ts): fresh APPDATA seed per state; before, the
+  empty-library state emptied the library for every later state.
+- Full-frame sweep at 1c9ed79 (detail / fill %, bars 1 / 3):
+  | state | size | detail % | detail px | fill % | fill blocks | pass | note |
+  | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+  | default-selected | 960x640 | 1.678% | 10307 | 4.115% | 1580/38400 | FAIL |  |
+  | row-hover | 960x640 | 1.676% | 10299 | 4.130% | 1586/38400 | FAIL |  |
+  | new-snippet | 960x640 | 2.113% | 12984 | 6.039% | 2319/38400 | FAIL |  |
+  | shortcut-mode-empty | 960x640 | 1.955% | 12013 | 4.891% | 1878/38400 | FAIL |  |
+  | shortcut-recording | 960x640 | 1.955% | 12013 | 4.924% | 1891/38400 | FAIL |  |
+  | search-filter | 960x640 | 1.332% | 8186 | 3.417% | 1312/38400 | FAIL |  |
+  | search-no-match | 960x640 | 1.392% | 8555 | 3.612% | 1387/38400 | FAIL |  |
+  | empty-library | 960x640 | 1.908% | 11721 | 4.987% | 1915/38400 | FAIL |  |
+  | settings-modal | 960x640 | 3.220% | 19782 | 11.195% | 4299/38400 | FAIL |  |
+  | tokens-modal | 960x640 | 3.667% | 22527 | 11.607% | 4457/38400 | FAIL |  |
+  | save-disabled | 960x640 | 2.113% | 12984 | 6.039% | 2319/38400 | FAIL |  |
+- Remaining classes: D2 letter-spacing (titles, labels, brand), D4 glyph
+  raster, D5 scrollbar look, D1 no backdrop blur (most of the modal states'
+  fill: the page behind the backdrop is blurred in Chromium). Geometry:
+  measured within 1px per slice (title bar, editor, sidebar, settings rows,
+  token rows).
+- Incident note: at 11:03:30 the INSTALLED HyperType (old PID 2376) started an
+  elevated child (PID 19256) - its own Run-as-Admin path (UAC consent needed;
+  synthetic input cannot click UAC). Its window was focused at 11:03:21 while
+  coordinator click drivers ran; both apps center the same 960x640 window.
+  Cannot rule out a stray synthetic click, but Run as Admin sits below the
+  fold of its settings list. snippets.json / settings.json untouched.
