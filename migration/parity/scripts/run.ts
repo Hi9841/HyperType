@@ -147,10 +147,12 @@ async function main() {
 
   buildParity();
   const exe = exePath();
-  const appdata = prepareAppData();
 
   const results = [];
   for (const state of states) {
+    // Fresh seed per state: some states mutate data (empty-library deletes
+    // every snippet), which would leak into the states after it.
+    const appdata = prepareAppData();
     await runState(state, exe, appdata);
     const outName = region
       ? `${state}-r${region.x}_${region.y}_${region.w}_${region.h}.png`
