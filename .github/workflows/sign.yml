@@ -1,0 +1,55 @@
+name: Sign release
+
+# Manual only. Signs the installer of a draft release with the updater key
+# (repository secrets) and uploads `<installer>.sig` to the same release.
+# Nothing is built here: packaging/release.ps1 builds the installer locally.
+# Then `hypertype-sign --sig` verifies the signature and writes latest.json.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag of the draft release, for example v1.2.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    name: Sign the Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download the installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          $name = "HyperType_$($env:TAG.TrimStart('v'))_x64-setup.exe"
+          gh release download $env:TAG -R $env:GITHUB_REPOSITORY -p $name
+          if (-not (Test-Path $name)) { throw "$name is not in release $env:TAG" }
+          "INSTALLER=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8NoBOM
+
+      - name: Sign
+        shell: pwsh
+        env:
+          RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RAW_PASS: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RAW_KEY)) { throw "TAURI_SIGNING_PRIVATE_KEY is not configured" }
+          if ([string]::IsNullOrWhiteSpace($env:RAW_PASS)) { throw "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not configured" }
+          # Same trim as the v1.x release workflow, which signed v1.1.7 and v1.1.8.
+          $env:TAURI_SIGNING_PRIVATE_KEY = $env:RAW_KEY.Trim([char]0xFEFF, "`r", "`n", " ")
+          $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $env:RAW_PASS.Trim("`r", "`n", " ")
+          npx --yes @tauri-apps/cli@2.11.4 signer sign $env:INSTALLER
+          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
+
+      - name: Upload the signature
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: gh release upload $env:TAG "$env:INSTALLER.sig" -R $env:GITHUB_REPOSITORY --clobber
