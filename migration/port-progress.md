@@ -531,3 +531,23 @@ in `task_plan.md`.
   5.624/13.876 (remaining D2 titles, D4 glyphs, D5 scrollbar). MERGED.
 - Next: S2 (sidebar: C1 icon, C2 scrollbar, C3 drift, Sidebar::new window),
   S5 (settings: row drift, ctor), S7b, full parity + scenarios, Phase 6.
+
+## 2026-10-31 - S2 merged (coordinator)
+- Rebased 8538236 -> 9ab976d (Cargo.toml: keep minisign/semver/serde + rfd;
+  Cargo.lock regenerated from main + rfd).
+- Coordinator fix 41f6a62: search icon painted after the input frame (was
+  hidden: GPUI paints in tree order); scrollbar only on overflow; list
+  header CSS padding (title y 151) and 31px; rows alternate 59/60 so tops
+  = 178/241/305/368/432 exactly like Chromium's half-up rounding (GPUI snaps
+  toward zero: a 59.5 row drifted 0.5px per row); drag pitch 60
+  (offsetHeight); search InputState created in new().
+- Region 0,42,340,598 detail/fill: default 2.299/5.835 (was 3.97/9.73),
+  row-hover 2.295/5.898, search-filter 1.282/3.569, no-match 1.418/3.773,
+  empty 1.675/4.086. Remaining: D4 glyphs, D2 list title, caret in the
+  search-filter capture (blink phase artifact).
+- Live (coordinator drivers in %TEMP%\claude, APPDATA temp copy, real log
+  8025 -> 8025): drag row1 by 2 rows -> addr,sig,gm,brb,omw; by 1 row ->
+  addr,gm,sig,brb,omw; delete row 2 + Enter on the native "Warning" prompt ->
+  addr removed; + Escape -> unchanged.
+- Lesson for later slices: fractional CSS boxes need Chromium half-up
+  rounding emulation on GPUI (it snaps toward zero).
