@@ -237,3 +237,16 @@ in `task_plan.md`.
 - Process lesson: implementers over-claim the region rule. Coordinator
   must look at a side-by-side before any review/merge.
 - Review r1: grok-4.7 xhigh, hypertype-gpui-s4-review-r1.
+
+## 2026-10-31 - S6 tokens modal done, under review
+- 2b642ec on port/s6-tokens (tokens_modal.rs only). Clippy pass. Card
+  region 140,38,680,564: detail 6.97 %, fill 22.18 %. Insert/close checked
+  via parity-only states. It duplicated modal_frame (hardcoded 500px/0.85)
+  and reserves a 15px gutter with pr(35).
+- Coordinator side-by-side: grid, columns, pills, colors, title match.
+  Defects: C1 intro inline code lacks its SURFACE_2 pill background,
+  C2 no scrollbar although the body overflows, C3 row pitch 60.0 vs 60.3
+  (2px drift by the second group).
+- Request (S1-owned widgets.rs): modal_frame(width, max_height) params.
+  Plan: apply after S1 fix r2 lands, then S6 fix round removes the copy.
+- Review r1: grok-4.7 xhigh, hypertype-gpui-s6-review-r1.
