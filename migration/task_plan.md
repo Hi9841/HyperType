@@ -64,7 +64,7 @@ Grok balance is exhausted; the coordinator works directly (owner choice).
    Status: complete (commits 6fcaebe, 2dcf293).
 2. Design doc (`migration/RULEBOOK.md`): CSS token -> GPUI constant table,
    element map, state ownership, motion table, allowed deviations.
-   Adversarial review (not a bakeoff: this is a redesign posture). Status: in_progress.
+   Adversarial review (not a bakeoff: this is a redesign posture). Status: complete (A1-A9).
 3. Translation slices, one Grok agent at a time, each with a separate
    read-only review and a parity run. Status: complete (all merged).
    - S1 Tokens, system fonts, 13 SVG icons, frameless window, title bar.
