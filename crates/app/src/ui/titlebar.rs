@@ -209,7 +209,9 @@ fn status_dot(
 
 fn studio_pill() -> impl IntoElement {
     // .studio-pill — styles.css:142-151 (letter-spacing omitted D2)
-    // font 10px/700, padding 1px 6px, line-height unitless 1.5 from root, radius 99px.
+    // font 10px/700, padding 1px 6px, line-height unitless 1.5 → 15px, radius 99px.
+    // boxes: element y=12 h=17, text line y=13. GPUI DirectWrite ink sat 1px low
+    // vs Chromium; keep h=17 with pt0/pb2 so ink rises 1px (A6 / rule 16).
     div()
         .bg(linear_gradient(
             135.,
@@ -218,10 +220,11 @@ fn studio_pill() -> impl IntoElement {
         ))
         .text_color(tokens::white())
         .text_size(px(10.))
-        .line_height(relative(1.5))
+        .line_height(px(15.))
         .font_weight(FontWeight::BOLD)
         .px(px(6.))
-        .py(px(1.))
+        .pt(px(0.))
+        .pb(px(2.))
         .rounded(px(99.))
         .child("STUDIO")
 }
@@ -231,10 +234,14 @@ fn win_controls(
     cx: &mut Context<Studio>,
 ) -> impl IntoElement {
     // .studio-win-controls — styles.css:153-157
+    // boxes: y=6.5 h=28 (settings/winbtn). GPUI painted 1px high → top +1.
     h_flex()
         .id("studio-win-controls")
+        .relative()
+        .top(px(1.))
         .items_center()
         .gap(px(4.))
+        .h(px(28.))
         .children(update_info.map(|info| update_pill(info, cx)))
         .child(settings_btn(cx))
         .child(winbtn_minimize())
@@ -273,6 +280,7 @@ fn update_pill(info: UpdateInfo, cx: &mut Context<Studio>) -> impl IntoElement {
 fn settings_btn(cx: &mut Context<Studio>) -> impl IntoElement {
     // .settings-icon-btn — styles.css:159-177
     // Icon inherits parent text_color so hover ink reaches the SVG.
+    // Keys (rule 21): tab stop; Enter/Space opens settings.
     div()
         .id("settings-icon-btn")
         .w(px(28.))
@@ -288,6 +296,7 @@ fn settings_btn(cx: &mut Context<Studio>) -> impl IntoElement {
         .cursor(CursorStyle::PointingHand)
         .mr(px(4.))
         .occlude()
+        .tab_index(0)
         .hover(|s| {
             s.bg(tokens::surface_3())
                 .text_color(tokens::ink())
@@ -307,6 +316,7 @@ fn settings_btn(cx: &mut Context<Studio>) -> impl IntoElement {
 
 fn winbtn_minimize() -> impl IntoElement {
     // .winbtn — styles.css:179-195
+    // Keys (rule 21/21a): tab_index(0); Enter/Space minimizes (via `on_click`).
     div()
         .id("winbtn-minimize")
         .w(px(28.))
@@ -318,7 +328,11 @@ fn winbtn_minimize() -> impl IntoElement {
         .justify_center()
         .cursor(CursorStyle::PointingHand)
         .occlude()
+        .tab_index(0)
         .hover(|s| s.bg(tokens::surface_2()).text_color(tokens::ink()))
+        .focus_visible(|s| {
+            s.shadow(tokens::focus_visible_shadows(tokens::surface_1()))
+        })
         .on_click(|_, window, _| {
             window.minimize_window();
         })
@@ -328,6 +342,7 @@ fn winbtn_minimize() -> impl IntoElement {
 fn winbtn_close() -> impl IntoElement {
     // .winbtn.close — styles.css:179-199
     // Hover: DANGER bg + white icon via inherited text_color.
+    // Keys (rule 21/21a): tab_index(0); Enter/Space closes (via `on_click`).
     div()
         .id("winbtn-close")
         .w(px(28.))
@@ -339,7 +354,11 @@ fn winbtn_close() -> impl IntoElement {
         .justify_center()
         .cursor(CursorStyle::PointingHand)
         .occlude()
+        .tab_index(0)
         .hover(|s| s.bg(tokens::danger()).text_color(tokens::white()))
+        .focus_visible(|s| {
+            s.shadow(tokens::focus_visible_shadows(tokens::surface_1()))
+        })
         .on_click(|_, window, _| {
             window.remove_window();
         })

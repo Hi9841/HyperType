@@ -1,5 +1,6 @@
-//! Parity-only scratch UI for proving slider capture and value_edit padding
-//! (S1 F1/F2). Open with `--features parity -- --parity-state widget-lab`.
+//! Parity-only scratch UI for proving slider capture, value_edit padding,
+//! and shared-widget keyboard focus (S1 F1/F2 + rule 21).
+//! Open with `--features parity -- --parity-state widget-lab`.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -9,7 +10,13 @@ use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
 use crate::ui::tokens;
-use crate::ui::widgets::{self, on_value_edit_event};
+use crate::ui::widgets::{self, on_value_edit_event, SegKind};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LabSeg {
+    A,
+    B,
+}
 
 pub struct WidgetLab {
     /// Shared with slider callbacks so mouse handlers can set values without
@@ -20,9 +27,12 @@ pub struct WidgetLab {
     repaint_burst: Rc<Cell<u32>>,
     /// Included in label text so GPUI cannot keep a stale shaped run.
     slider_gen: Rc<Cell<u32>>,
+    /// Same Cell pattern for keyboard/click handlers (avoid entity.update re-entry).
+    seg: Rc<Cell<LabSeg>>,
+    switch_on: Rc<Cell<bool>>,
     edit: Entity<InputState>,
     edit_committed: f32,
-    checking: bool,
+    checking: Rc<Cell<bool>>,
     _edit_sub: Subscription,
 }
 
@@ -63,9 +73,11 @@ impl WidgetLab {
             slider_committed: Rc::new(Cell::new(50.)),
             repaint_burst: Rc::new(Cell::new(0)),
             slider_gen: Rc::new(Cell::new(0)),
+            seg: Rc::new(Cell::new(LabSeg::A)),
+            switch_on: Rc::new(Cell::new(false)),
             edit,
             edit_committed: 15.,
-            checking: false,
+            checking: Rc::new(Cell::new(false)),
             _edit_sub,
         }
     }
@@ -76,10 +88,14 @@ impl Render for WidgetLab {
         let live = self.slider_live.get();
         let committed = self.slider_committed.get();
         let gen_n = self.slider_gen.get();
+        let seg = self.seg.get();
+        let switch_on = self.switch_on.get();
         // Parity drive sync: BitBlt must wait until this frame is built.
         let _ = std::fs::write(
             std::env::temp_dir().join("ht-lab-render.txt"),
-            format!("live={live:.0} committed={committed:.0} gen={gen_n}"),
+            format!(
+                "live={live:.0} committed={committed:.0} gen={gen_n} seg={seg:?} switch={switch_on}"
+            ),
         );
         let burst = self.repaint_burst.get();
         if burst > 0 {
@@ -96,6 +112,8 @@ impl Render for WidgetLab {
         let slider_committed = self.slider_committed.clone();
         let slider_gen = self.slider_gen.clone();
         let repaint_burst = self.repaint_burst.clone();
+        let seg_cell = self.seg.clone();
+        let switch_cell = self.switch_on.clone();
         let entity_id = entity.entity_id();
 
         v_flex()
@@ -106,17 +124,78 @@ impl Render for WidgetLab {
             .font_family(tokens::FONT_UI)
             .text_size(px(tokens::ROOT_SIZE))
             .p(px(24.))
-            .gap(px(20.))
+            .gap(px(16.))
             .child(
                 div()
                     .text_size(px(14.))
                     .font_weight(FontWeight::BOLD)
-                    .child("widget-lab (S1 F1/F2)"),
+                    .child("widget-lab (S1 F1/F2 + focus)"),
             )
             .child(
                 v_flex()
                     .gap(px(8.))
-                    .child(div().child("Slider (1–100, step 1)"))
+                    .child(div().child("segmented (Tab → Enter/Space)"))
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap(px(16.))
+                            .child(widgets::segmented(
+                                "lab-seg",
+                                &[(LabSeg::A, "Alpha"), (LabSeg::B, "Beta")],
+                                seg,
+                                SegKind::Two,
+                                px(200.),
+                                true, // parity freeze
+                                {
+                                    let seg_cell = seg_cell.clone();
+                                    move |v, _window, cx| {
+                                        seg_cell.set(v);
+                                        cx.notify(entity_id);
+                                    }
+                                },
+                                window,
+                                cx,
+                            ))
+                            .child(
+                                div()
+                                    .font_family(tokens::FONT_MONO)
+                                    .child(format!("seg={seg:?}")),
+                            ),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap(px(8.))
+                    .child(div().child("switch (Tab → Enter/Space)"))
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap(px(16.))
+                            .child(widgets::switch(
+                                "lab-switch",
+                                switch_on,
+                                true, // parity freeze
+                                {
+                                    let switch_cell = switch_cell.clone();
+                                    move |v, _window, cx| {
+                                        switch_cell.set(v);
+                                        cx.notify(entity_id);
+                                    }
+                                },
+                                window,
+                                cx,
+                            ))
+                            .child(
+                                div()
+                                    .font_family(tokens::FONT_MONO)
+                                    .child(format!("switch={switch_on}")),
+                            ),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap(px(8.))
+                    .child(div().child("Slider (1–100, step 1; arrows/Home/End/PgUp/PgDn)"))
                     .child(
                         h_flex()
                             .items_center()
@@ -193,24 +272,25 @@ impl Render for WidgetLab {
             .child(
                 h_flex()
                     .gap(px(12.))
+                    .child(widgets::btn_accent("lab-accent", "Save", true, |_, _| {}))
+                    .child(widgets::btn_danger_outline("lab-danger", "Delete", |_, _| {}))
+                    .child(widgets::btn_surface("lab-surface", "Repair", true, |_, _| {}))
                     .child(widgets::btn_create_first("lab-create", "Create Snippet", |_, _| {}))
                     .child(widgets::btn_check_updates(
                         "lab-check",
-                        if self.checking {
+                        if self.checking.get() {
                             "Checking..."
                         } else {
                             "Check for updates"
                         },
                         true,
-                        self.checking,
+                        self.checking.get(),
                         true, // parity freeze: spin frozen at t=0
                         {
-                            let entity = entity.clone();
+                            let checking = self.checking.clone();
                             move |_, cx| {
-                                entity.update(cx, |lab, cx| {
-                                    lab.checking = !lab.checking;
-                                    cx.notify();
-                                });
+                                checking.set(!checking.get());
+                                cx.notify(entity_id);
                             }
                         },
                     )),

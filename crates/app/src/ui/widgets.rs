@@ -78,6 +78,8 @@ pub enum SegKind {
 
 /// `.seg` / `.seg-kind` / `.seg-3` / `.seg-combo` — styles.css:601-657
 /// Animated thumb uses SMOOTH + SPRING. `freeze` forces t=0 (parity).
+///
+/// Keys (rule 21): each option is a tab stop; Enter/Space selects (via `on_click`).
 #[allow(dead_code)] // S4/S5 segmented
 pub fn segmented<T: Copy + PartialEq + 'static>(
     id: impl Into<ElementId>,
@@ -134,8 +136,19 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
             let value = *value;
             let on_change = on_change.clone();
             // Option ids include the parent element id (finding 18).
+            let opt_id = (id.clone(), format!("opt-{ix}"));
+            // Explicit handle so Enter/Space dispatch after Tab/click focus.
+            let focus = window
+                .use_keyed_state((id.clone(), format!("opt-{ix}-focus")), cx, |_, cx| {
+                    cx.focus_handle()
+                })
+                .read(cx)
+                .clone()
+                .tab_index(0)
+                .tab_stop(true);
+            let focus_for_mouse = focus.clone();
             div()
-                .id((id.clone(), format!("opt-{ix}")))
+                .id(opt_id)
                 .relative()
                 .flex_1()
                 .h_full()
@@ -151,7 +164,37 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
                 } else {
                     tokens::ink_2()
                 })
+                .track_focus(&focus)
+                .tab_index(0)
+                .tab_stop(true)
+                .occlude()
+                .focus_visible(|s| {
+                    s.shadow(tokens::focus_visible_shadows(tokens::surface_2()))
+                })
                 .child((*label).to_string())
+                .on_mouse_down(MouseButton::Left, {
+                    let on_change = on_change.clone();
+                    move |_, window, cx| {
+                        focus_for_mouse.focus(window, cx);
+                        on_change(value, window, cx);
+                        cx.stop_propagation();
+                    }
+                })
+                .on_key_down({
+                    let on_change = on_change.clone();
+                    move |ev, window, cx| {
+                        if ev.keystroke.modifiers.modified() {
+                            return;
+                        }
+                        match ev.keystroke.key.as_str() {
+                            "enter" | "space" => {
+                                on_change(value, window, cx);
+                                cx.stop_propagation();
+                            }
+                            _ => {}
+                        }
+                    }
+                })
                 .on_click(move |_, window, cx| {
                     on_change(value, window, cx);
                 })
@@ -160,6 +203,8 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
 
 /// `.switch` / `.knob` — styles.css:884-912.
 /// Track bg/border: SMOOTH + EASE_OUT. Knob: SMOOTH + SPRING.
+///
+/// Keys (rule 21): tab stop; Enter/Space toggles (via `on_click`).
 #[allow(dead_code)] // S5 settings switch
 pub fn switch(
     id: impl Into<ElementId>,
@@ -197,6 +242,20 @@ pub fn switch(
         window,
         cx,
     );
+    let ring_bg = if checked {
+        tokens::accent()
+    } else {
+        tokens::control()
+    };
+    let on_toggle = Rc::new(on_toggle);
+    // Explicit handle so Enter/Space dispatch on this node after click-focus.
+    let focus = window
+        .use_keyed_state((id.clone(), "focus"), cx, |_, cx| cx.focus_handle())
+        .read(cx)
+        .clone()
+        .tab_index(0)
+        .tab_stop(true);
+    let focus_for_mouse = focus.clone();
 
     div()
         .id(id)
@@ -209,6 +268,28 @@ pub fn switch(
         .border_color(track_border)
         .bg(track_bg)
         .cursor(CursorStyle::PointingHand)
+        .track_focus(&focus)
+        .tab_index(0)
+        .tab_stop(true)
+        .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(ring_bg)))
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            focus_for_mouse.focus(window, cx);
+        })
+        .on_key_down({
+            let on_toggle = on_toggle.clone();
+            move |ev, window, cx| {
+                if ev.keystroke.modifiers.modified() {
+                    return;
+                }
+                match ev.keystroke.key.as_str() {
+                    "enter" | "space" => {
+                        on_toggle(!checked, window, cx);
+                        cx.stop_propagation();
+                    }
+                    _ => {}
+                }
+            }
+        })
         .on_click(move |_, window, cx| on_toggle(!checked, window, cx))
         .child(
             div()
@@ -255,6 +336,9 @@ fn snap_slider(value: f32, min: f32, max: f32, step: f32) -> f32 {
 /// Drag flags live in an `Rc<Cell<_>>` keyed by slider id. Updating an
 /// `Entity<SliderDrag>` would notify the parent view mid-gesture and replace
 /// mouse listeners before mouse-up, dropping the click `change`/`commit`.
+///
+/// Keys (rule 21): tab stop; Arrow Left/Down −step, Right/Up +step, Home/End,
+/// PageUp/PageDown ±10 steps (Chromium `<input type=range>`); each key lives + commits.
 #[allow(dead_code)] // S5 settings + parity widget-lab
 pub fn slider(
     id: impl Into<ElementId>,
@@ -274,6 +358,8 @@ pub fn slider(
     let thumb = px(14.);
     let track_h = px(4.);
     let x = (track_w - thumb) * t;
+    let step = if step > 0. { step } else { 1. };
+    let page = step * 10.;
 
     // Keyed Rc<Cell>: same cell across frames; never entity.update mid-gesture.
     let drag = window
@@ -282,6 +368,15 @@ pub fn slider(
         })
         .read(cx)
         .clone();
+    // Explicit focus handle so key dispatch hits this node. TabStopMap reads
+    // `FocusHandle.tab_stop` (not the element flag) — set both on the handle
+    // (carousel pattern) and on the element.
+    let focus = window
+        .use_keyed_state((id.clone(), "focus"), cx, |_, cx| cx.focus_handle())
+        .read(cx)
+        .clone()
+        .tab_index(0)
+        .tab_stop(true);
     let on_live = Rc::new(on_live);
     let on_commit = Rc::new(on_commit);
 
@@ -291,12 +386,39 @@ pub fn slider(
         snap_slider(min + t * (max - min), min, max, step)
     };
 
+    let on_live_key = on_live.clone();
+    let on_commit_key = on_commit.clone();
+    let focus_for_mouse = focus.clone();
+
     div()
         .id(id)
         .relative()
         .w(track_w)
         .h(track_h)
         .cursor(CursorStyle::PointingHand)
+        .track_focus(&focus)
+        .tab_index(0)
+        .tab_stop(true)
+        .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::bg())))
+        .on_key_down(move |ev, window, cx| {
+            if ev.keystroke.modifiers.modified() {
+                return;
+            }
+            let next = match ev.keystroke.key.as_str() {
+                "left" | "down" => snap_slider(value - step, min, max, step),
+                "right" | "up" => snap_slider(value + step, min, max, step),
+                "home" => min,
+                "end" => max,
+                "pageup" => snap_slider(value + page, min, max, step),
+                "pagedown" => snap_slider(value - page, min, max, step),
+                _ => return,
+            };
+            if (next - value).abs() > f32::EPSILON {
+                on_live_key(next, window, cx);
+                on_commit_key(next, window, cx);
+            }
+            cx.stop_propagation();
+        })
         .child(
             div()
                 .w_full()
@@ -337,11 +459,13 @@ pub fn slider(
                     let on_commit = on_commit.clone();
                     let drag = drag.clone();
                     let hitbox = hitbox.clone();
+                    let focus_for_mouse = focus_for_mouse.clone();
 
                     window.on_mouse_event({
                         let on_live = on_live.clone();
                         let drag = drag.clone();
                         let hitbox = hitbox.clone();
+                        let focus_for_mouse = focus_for_mouse.clone();
                         move |ev: &MouseDownEvent, phase, window, cx| {
                             if phase != DispatchPhase::Bubble
                                 || ev.button != MouseButton::Left
@@ -349,6 +473,9 @@ pub fn slider(
                             {
                                 return;
                             }
+                            // Canvas hitbox sits above the focusable div; focus explicitly
+                            // so arrow keys dispatch along this control's path.
+                            focus_for_mouse.focus(window, cx);
                             window.capture_pointer(hitbox.id);
                             let origin_x = track_bounds.origin.x;
                             let width = track_bounds.size.width;
@@ -368,12 +495,14 @@ pub fn slider(
                     window.on_mouse_event({
                         let on_live = on_live.clone();
                         let drag = drag.clone();
-                        let hitbox = hitbox.clone();
                         move |ev: &MouseMoveEvent, phase, window, cx| {
-                            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) {
+                            if phase != DispatchPhase::Bubble {
                                 return;
                             }
                             let d = drag.get();
+                            // While dragging, sample every move. capture_pointer stores a
+                            // HitboxId from the press frame; ids are not reused, so
+                            // hitbox.is_hovered is false on later frames (F1 / rule 14).
                             if !d.active {
                                 return;
                             }
@@ -505,6 +634,9 @@ fn mono_zero_advance(window: &Window) -> Pixels {
 
 /// `.value-edit` — styles.css:934-945. Kit Input with appearance(false).
 /// Rule 17: set px/py/height explicitly so Kit Medium (10/8, h_8) does not remain.
+///
+/// Keys (rule 21): Kit `Input` is already a tab stop (`tab_index(0)`); type digits,
+/// Enter blurs, blur commits (see `on_value_edit_event`).
 #[allow(dead_code)] // S5 settings + parity widget-lab
 pub fn value_edit(
     input: &Entity<InputState>,
@@ -520,6 +652,7 @@ pub fn value_edit(
         .child(
             Input::new(input)
                 .appearance(false)
+                .tab_index(0)
                 .text_size(px(12.))
                 .font_family(tokens::FONT_MONO)
                 .font_weight(FontWeight::SEMIBOLD)
@@ -593,6 +726,9 @@ pub fn hook_badge(active: bool, label: impl Into<SharedString>) -> impl IntoElem
 
 /// Modal backdrop + card + header. styles.css:799-849.
 /// Fade in 150 ms from 0→1 on open (RULEBOOK rule 12). Backdrop click and Escape close.
+///
+/// Rule 21a: no focus trap — Tab continues through page stops behind the backdrop.
+/// Close control is `tab_index(0)` (tree order).
 #[allow(dead_code)] // S5/S6 modals
 pub fn modal_frame(
     id: impl Into<ElementId>,
@@ -675,7 +811,11 @@ pub fn modal_frame(
                                 .rounded(px(4.))
                                 .text_color(tokens::ink_3())
                                 .cursor(CursorStyle::PointingHand)
+                                .tab_index(0)
                                 .hover(|s| s.text_color(tokens::ink()))
+                                .focus_visible(|s| {
+                                    s.shadow(tokens::focus_visible_shadows(tokens::surface_1()))
+                                })
                                 .child(icons::close())
                                 .tooltip(move |window, cx| {
                                     Tooltip::new("Close").build(window, cx)
@@ -688,6 +828,8 @@ pub fn modal_frame(
 }
 
 /// Shared button: accent fill (`.btn-save-snippet` base) — styles.css:772-793
+///
+/// Keys (rule 21): tab stop when enabled; Enter/Space activates (via `on_click`).
 #[allow(dead_code)] // S4 save button
 pub fn btn_accent(
     id: impl Into<ElementId>,
@@ -706,6 +848,8 @@ pub fn btn_accent(
         .font_weight(FontWeight::SEMIBOLD)
         .when(enabled, |this| {
             this.cursor(CursorStyle::PointingHand)
+                .tab_index(0)
+                .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::accent())))
                 .hover(|s| s.bg(tokens::accent_hover()))
                 .active(|s| s.bg(tokens::accent_down()))
                 .on_click(move |_, window, cx| on_click(window, cx))
@@ -715,6 +859,8 @@ pub fn btn_accent(
 }
 
 /// Shared button: danger outline (`.btn-delete-active`) — styles.css:756-770
+///
+/// Keys (rule 21): tab stop; Enter/Space activates (via `on_click`).
 #[allow(dead_code)] // S4 delete button
 pub fn btn_danger_outline(
     id: impl Into<ElementId>,
@@ -733,12 +879,16 @@ pub fn btn_danger_outline(
         .text_size(px(12.5))
         .font_weight(FontWeight::SEMIBOLD)
         .cursor(CursorStyle::PointingHand)
+        .tab_index(0)
+        .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::bg())))
         .hover(|s| s.bg(tokens::danger_tint()).border_color(tokens::danger()))
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(label.into())
 }
 
 /// `.btn-repair-hook` — styles.css:1193-1217. Quiet surface control.
+///
+/// Keys (rule 21): tab stop when enabled; Enter/Space activates (via `on_click`).
 #[allow(dead_code)] // S5 repair hook
 pub fn btn_surface(
     id: impl Into<ElementId>,
@@ -760,6 +910,10 @@ pub fn btn_surface(
         .whitespace_nowrap()
         .when(enabled, |this| {
             this.cursor(CursorStyle::PointingHand)
+                .tab_index(0)
+                .focus_visible(|s| {
+                    s.shadow(tokens::focus_visible_shadows(tokens::surface_3()))
+                })
                 .hover(|s| {
                     s.bg(tokens::surface_2())
                         .border_color(tokens::accent())
@@ -773,6 +927,8 @@ pub fn btn_surface(
 
 /// `.btn-check-updates` — styles.css:1104-1126. IconRefresh before label (gap 5).
 /// Spins while checking (SPIN 1s linear infinite); frozen at t=0 in parity mode.
+///
+/// Keys (rule 21): tab stop when enabled; Enter/Space activates (via `on_click`).
 #[allow(dead_code)] // S5 settings + parity widget-lab
 pub fn btn_check_updates(
     id: impl Into<ElementId>,
@@ -810,6 +966,10 @@ pub fn btn_check_updates(
         .rounded(px(5.))
         .when(enabled, |this| {
             this.cursor(CursorStyle::PointingHand)
+                .tab_index(0)
+                .focus_visible(|s| {
+                    s.shadow(tokens::focus_visible_shadows(tokens::surface_3()))
+                })
                 .hover(|s| {
                     s.bg(tokens::field())
                         .text_color(tokens::ink())
@@ -823,6 +983,8 @@ pub fn btn_check_updates(
 }
 
 /// `.btn-create-first` — styles.css:490-502. IconPlus before label (gap 6).
+///
+/// Keys (rule 21): tab stop; Enter/Space activates (via `on_click`).
 #[allow(dead_code)] // S2 empty library + parity widget-lab
 pub fn btn_create_first(
     id: impl Into<ElementId>,
@@ -843,6 +1005,8 @@ pub fn btn_create_first(
         .py(px(6.))
         .rounded(px(6.))
         .cursor(CursorStyle::PointingHand)
+        .tab_index(0)
+        .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::surface_3())))
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(icons::plus())
         .child(label.into())

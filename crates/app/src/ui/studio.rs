@@ -19,6 +19,21 @@ use crate::ui::tokens;
 use crate::ui::tokens_modal::TokensModal;
 use crate::ui::update::{self, UpdateUi};
 
+actions!(studio_focus, [FocusNext, FocusPrev]);
+
+const STUDIO_FOCUS_CONTEXT: &str = "Studio";
+
+/// Rule 21a: bind Studio-root Tab / Shift-Tab. Kit `Root` also binds Tab in
+/// context `"Root"`, but an unfocused window dispatches from the tree root
+/// (no context). Focusing the Studio handle + `"Studio"` context makes the
+/// first Tab call `focus_next` → first DOM tab stop (title bar).
+pub fn init_focus(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("tab", FocusNext, Some(STUDIO_FOCUS_CONTEXT)),
+        KeyBinding::new("shift-tab", FocusPrev, Some(STUDIO_FOCUS_CONTEXT)),
+    ]);
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Modal {
     Settings,
@@ -44,6 +59,9 @@ pub struct Studio {
     /// Parity-only overlay for slider / value_edit proof (`widget-lab`).
     #[cfg(feature = "parity")]
     pub widget_lab: Option<Entity<crate::ui::widget_lab::WidgetLab>>,
+    /// Rule 21a: focused on open (not a tab stop) so Kit `Root`'s Tab binding
+    /// dispatches when nothing else is focused; first Tab → first DOM stop.
+    root_focus: FocusHandle,
     did_initial_select: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -78,6 +96,10 @@ impl Studio {
             }),
         ];
 
+        // Not a tab stop: holds focus so Root's Tab key context is active (A7/21a).
+        let root_focus = cx.focus_handle().tab_stop(false);
+        root_focus.focus(window, cx);
+
         let mut this = Self {
             state,
             status,
@@ -94,6 +116,7 @@ impl Studio {
             freeze_animations,
             #[cfg(feature = "parity")]
             widget_lab: None,
+            root_focus,
             did_initial_select: false,
             _subscriptions,
         };
@@ -105,7 +128,6 @@ impl Studio {
         let studio_entity = cx.entity();
         update::check(&studio_entity, false, cx);
 
-        let _ = window;
         this
     }
 
@@ -305,10 +327,31 @@ fn parity_mock_status(mut status: Status) -> Status {
     status
 }
 
+impl Studio {
+    fn on_focus_next(&mut self, _: &FocusNext, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus_next(cx);
+        // Prefer Studio's binding over Kit Root's Tab when both contexts match.
+        cx.stop_propagation();
+    }
+
+    fn on_focus_prev(&mut self, _: &FocusPrev, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus_prev(cx);
+        cx.stop_propagation();
+    }
+}
+
 impl Render for Studio {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // .studio-app — styles.css:73-79
+        // Rule 21a: zero-size focus anchor (not the full-size root). A full-size
+        // track_focus steals every click via the auto mouse-down focus listener.
+        // Key context + Tab actions live on the visible root; the anchor holds
+        // initial focus so Tab dispatches without being a tab stop.
         v_flex()
+            .id("studio-root")
+            .key_context(STUDIO_FOCUS_CONTEXT)
+            .on_action(cx.listener(Self::on_focus_next))
+            .on_action(cx.listener(Self::on_focus_prev))
             .size_full()
             .bg(tokens::bg())
             .text_color(tokens::ink())
@@ -316,6 +359,15 @@ impl Render for Studio {
             .text_size(px(tokens::ROOT_SIZE))
             .line_height(relative(tokens::ROOT_LINE_HEIGHT))
             .font_weight(FontWeight::NORMAL)
+            .child(
+                div()
+                    .id("studio-focus-anchor")
+                    .absolute()
+                    .size_0()
+                    .track_focus(&self.root_focus)
+                    .tab_index(0)
+                    .tab_stop(false),
+            )
             .child(titlebar::render(self, window, cx))
             // .studio-workspace — styles.css:205-210
             .child(

@@ -26,6 +26,7 @@ use gpui_kit::*;
 use crate::shell::Shell;
 
 /// Install Kit theme: dark mode, system fonts, caret INK, selection RING.
+/// Also binds Studio-root Tab (rule 21a).
 pub fn init_theme(cx: &mut App) {
     Theme::change(ThemeMode::Dark, None, cx);
     Theme::update(cx, |theme| {
@@ -38,6 +39,7 @@ pub fn init_theme(cx: &mut App) {
         theme.foreground = tokens::ink();
         theme.border = tokens::line();
     });
+    studio::init_focus(cx);
 }
 
 /// Open (or activate) the Studio window.
