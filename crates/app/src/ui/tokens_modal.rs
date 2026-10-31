@@ -198,8 +198,6 @@ pub struct TokensModal {
     /// Content width of `.tokens-catalog-body` (padding excluded). Default = 680-40.
     body_width: f32,
     scroll: ScrollHandle,
-    /// Token string of the pill under the pointer (rule 24 label ink).
-    hovered_token: Option<&'static str>,
     _observe: Subscription,
 }
 
@@ -215,7 +213,6 @@ impl TokensModal {
             // Seed assumes the gutter so the first frame already uses 3 columns.
             body_width: 625.,
             scroll: ScrollHandle::new(),
-            hovered_token: None,
             _observe,
         }
     }
@@ -315,21 +312,12 @@ impl Render for TokensModal {
             })
         };
 
-        // Tab indices: close = 0 (from modal_frame_sized), pills = 1..n in DOM order.
-        let hovered = self.hovered_token;
-        let mut tab = 1isize;
-        let mut groups = Vec::new();
-        for group in GROUPS {
-            let start = tab;
-            tab += group.entries.len() as isize;
-            groups.push(category_group(
-                group,
-                cols,
-                start,
-                hovered,
-                body_entity.downgrade(),
-            ));
-        }
+        // Rule 21a: close (modal header) then pills, all tab_index(0), tree order.
+        let this = body_entity.downgrade();
+        let groups: Vec<_> = GROUPS
+            .iter()
+            .map(|group| category_group(group, cols, this.clone()))
+            .collect();
 
         // Body — styles.css:1000-1006. Content sizes the card up to max_h; then
         // this flex_1 + overflow_y_scroll viewport scrolls. Kit scrollbar overlays
@@ -407,58 +395,70 @@ impl Render for TokensModal {
 
 /// `.tokens-catalog-intro` — styles.css:1009-1020.
 ///
-/// Rule 22: each `<code>` is its own element (bg/padding/radius), not a TextRun.
-/// Two rows match the reference wrap: `{date:us}` starts line 2.
+/// Rule 22 / A7: each `<code>` is its own element (bg/padding/radius), not a
+/// TextRun. Prose is per-word elements in one `flex_wrap` row so the break
+/// matches the browser (`{date:us}` starts line 2 after "or flags").
 fn catalog_intro() -> impl IntoElement {
     let prose = |text: &'static str| {
         div()
             .text_size(px(12.5))
             .line_height(px(19.))
             .text_color(tokens::ink_2())
+            .flex_shrink_0()
             .child(text)
     };
+    // Reference code boxes are h=16 (text line 14 + padding 1+1).
     let code = |token: &'static str| {
         div()
             .id(SharedString::from(format!("tokens-intro-code-{token}")))
             .font_family(tokens::FONT_MONO)
             .text_size(px(11.5))
-            .line_height(px(12.))
+            .line_height(px(14.))
             .text_color(tokens::accent_ink())
             .bg(tokens::surface_2())
             .rounded(px(4.))
             .px(px(5.))
             .py(px(1.))
+            .flex_shrink_0()
             .child(token)
     };
 
-    // Two explicit rows: GPUI has no inline layout, so a single flex row clips
-    // "or flags like" past the card edge. `{date:us}` still starts line 2.
-    v_flex()
+    // Reference intro box is 38.5 (two 19.25 line boxes). GPUI integer
+    // line boxes are 19+19=38; min_h 39 keeps the catalog stack within 1px.
+    h_flex()
         .id("tokens-catalog-intro")
         .w_full()
-        .child(
-            h_flex()
-                .w_full()
-                .items_center()
-                .child(prose(
-                    "Click any token to insert it directly into your expansion canvas. You can also mix offsets like ",
-                ))
-                .child(code("{date+3d}")),
-        )
-        .child(
-            h_flex()
-                .items_center()
-                .child(prose("or flags like "))
-                .child(code("{date:us}"))
-                .child(prose(".")),
-        )
+        .min_h(px(39.))
+        .flex_wrap()
+        .items_center()
+        .child(prose("Click "))
+        .child(prose("any "))
+        .child(prose("token "))
+        .child(prose("to "))
+        .child(prose("insert "))
+        .child(prose("it "))
+        .child(prose("directly "))
+        .child(prose("into "))
+        .child(prose("your "))
+        .child(prose("expansion "))
+        .child(prose("canvas. "))
+        .child(prose("You "))
+        .child(prose("can "))
+        .child(prose("also "))
+        .child(prose("mix "))
+        .child(prose("offsets "))
+        .child(prose("like "))
+        .child(code("{date+3d}"))
+        .child(prose(" or "))
+        .child(prose("flags "))
+        .child(prose("like "))
+        .child(code("{date:us}"))
+        .child(prose("."))
 }
 
 fn category_group(
     group: &'static TokenGroup,
     cols: usize,
-    tab_start: isize,
-    hovered: Option<&'static str>,
     this: WeakEntity<TokensModal>,
 ) -> impl IntoElement {
     // .token-category-group — styles.css:1022-1026
@@ -484,16 +484,13 @@ fn category_group(
             let missing = cols - row.len();
             // Subpixel row pitch 60.55 → alternating 52/53 pill heights + gap 8
             // yields starts 0, 60, 121, 181 (pitches 60, 61, 60) — rule 23.
+            // Catalog labels are fixed one-line spec text; a wrapping label would need content-driven height.
             let pill_h = if row_ix % 2 == 0 { px(52.) } else { px(53.) };
-            let mut tab = tab_start + (row_ix * cols) as isize;
             h_flex()
                 .w_full()
                 .gap(px(8.))
                 .children(row.iter().map(move |entry| {
-                    let t = tab;
-                    tab += 1;
-                    let label_hot = hovered == Some(entry.token);
-                    token_pill(entry, pill_h, t, label_hot, this.clone())
+                    token_pill(entry, pill_h, this.clone())
                 }))
                 .children((0..missing).map(|_| {
                     // Keep last-row track widths equal to 1fr columns.
@@ -505,27 +502,18 @@ fn category_group(
 fn token_pill(
     entry: &'static TokenEntry,
     height: Pixels,
-    tab_index: isize,
-    label_hot: bool,
     this: WeakEntity<TokensModal>,
 ) -> impl IntoElement {
     let token = entry.token;
-    // Sanitize `{}` out of element ids.
-    let key: SharedString = token
-        .trim_matches(|c| c == '{' || c == '}')
-        .to_string()
-        .into();
-    let pill_id: SharedString = format!("token-pill-{key}").into();
-    let label_id: SharedString = format!("token-pill-label-{key}").into();
-    let label_ink = if label_hot {
-        tokens::ink_2()
-    } else {
-        tokens::ink_3()
-    };
+    // Braces are fine in SharedString group names (div.rs group API).
+    let group_name: SharedString = format!("token-pill-{token}").into();
+    let pill_id: SharedString = format!("token-pill-{token}").into();
+    let label_id: SharedString = format!("token-pill-label-{token}").into();
     // .token-pill-card — styles.css:1041-1072
     v_flex()
         .id(pill_id)
-        .tab_index(tab_index)
+        .group(group_name.clone())
+        .tab_index(0)
         .relative()
         .flex_1()
         .min_w(px(190.))
@@ -547,27 +535,6 @@ fn token_pill(
         })
         .focus_visible(|s| {
             s.shadow(tokens::focus_visible_shadows(tokens::surface_2()))
-        })
-        .on_hover({
-            let this = this.clone();
-            move |hovered, _, cx| {
-                if let Some(entity) = this.upgrade() {
-                    entity.update(cx, |modal, cx| {
-                        let next = if *hovered { Some(token) } else { None };
-                        if modal.hovered_token != next {
-                            // Clear only when leaving this pill (not when moving
-                            // to another pill that will set itself).
-                            if *hovered {
-                                modal.hovered_token = Some(token);
-                                cx.notify();
-                            } else if modal.hovered_token == Some(token) {
-                                modal.hovered_token = None;
-                                cx.notify();
-                            }
-                        }
-                    });
-                }
-            }
         })
         .on_click({
             let this = this.clone();
@@ -608,12 +575,13 @@ fn token_pill(
         )
         .child(
             // span — styles.css:1065-1071
-            // Rule 24: stable id + hovered_token drives INK_2 on pill hover.
+            // Rule 24: stable id + group_hover → INK_2 when the pill is hovered.
             div()
                 .id(label_id)
                 .text_size(px(11.))
-                .text_color(label_ink)
+                .text_color(tokens::ink_3())
                 .line_height(px(14.))
+                .group_hover(group_name, |s| s.text_color(tokens::ink_2()))
                 .child(entry.label),
         )
 }
