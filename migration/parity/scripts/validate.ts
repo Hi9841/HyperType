@@ -132,20 +132,12 @@ async function runGpuiDefault(): Promise<DiffResult> {
   );
 }
 
-function rebuildDist(): void {
-  console.log("Rebuilding SolidJS dist from current src/ (bun run build)...");
-  const proc = run("bun", ["run", "build"], { cwd: REPO_ROOT, inherit: true });
-  if (proc.status !== 0) {
-    throw new Error("bun run build failed; cannot validate against fresh UI");
-  }
-}
-
 async function main() {
   mkdirSync(VAL_DIR, { recursive: true });
   mkdirSync(REFERENCE_DIR, { recursive: true });
   mkdirSync(DIFF_DIR, { recursive: true });
 
-  rebuildDist();
+  buildWebReference();
 
   const scale = windowsDisplayScale();
   const stopServer = await startStaticServer();

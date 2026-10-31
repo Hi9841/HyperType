@@ -13,11 +13,11 @@ use minisign_verify::{PublicKey, Signature};
 use semver::Version;
 use serde::Deserialize;
 
-/// Same feed as `src-tauri/tauri.conf.json` plugins.updater.endpoints.
+/// Same feed as the v1.x `tauri.conf.json` plugins.updater.endpoints.
 const FEED_URL: &str =
     "https://github.com/Hi9841/HyperType/releases/latest/download/latest.json";
 
-/// Base64 of the minisign public key file from `tauri.conf.json` plugins.updater.pubkey.
+/// Base64 of the minisign public key file (v1.x `tauri.conf.json` plugins.updater.pubkey).
 const PUBKEY_B64: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxOUREQzQ1ODA1MDVCNApSV1MwQlFWWXhOMFpBd2dydTZQbXhlTXJmak9BanYxWnMxNXJiT1Q2VjRKSkVZWTh0cDF3RDltbAo=";
 
 /// Prefer the NSIS key the UI requests, then Tauri's `{os}-{arch}` fallback
@@ -754,7 +754,7 @@ fn launch_nsis_passive(installer: &Path) -> Result<(), String> {
         return Err("installer is not a Windows executable".into());
     }
 
-    // Passive mode from tauri.conf.json plugins.updater.windows.installMode.
+    // Passive mode, as v1.x set in tauri.conf.json plugins.updater.windows.installMode.
     // nsis_args: /P ; always /UPDATE ; restart_after_install: /R /ARGS …
     // (config.rs:41–57, updater.rs:884–908).
     let mut params = OsString::from("/P /UPDATE /R /ARGS");

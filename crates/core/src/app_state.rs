@@ -1,5 +1,5 @@
 //! Shared application state. A single `Arc<AppState>` is handed to both the
-//! Tauri command layer (the UI) and the engine thread (the keyboard path),
+//! UI command layer and the engine thread (the keyboard path),
 //! so the two planes never desync.
 
 use std::path::PathBuf;

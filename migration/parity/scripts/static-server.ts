@@ -1,10 +1,10 @@
-/** Tiny static file server for the Vite `dist/` build on :1420. */
+/** Tiny static file server for the reference web UI `dist/` on :1420. */
 import { createServer } from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { join, extname } from "node:path";
-import { REPO_ROOT } from "./paths.ts";
+import { WEB_DIST } from "./web-ref.ts";
 
-const ROOT = join(REPO_ROOT, "dist");
+const ROOT = WEB_DIST;
 const PORT = 1420;
 
 const TYPES: Record<string, string> = {

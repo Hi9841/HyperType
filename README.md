@@ -1,11 +1,10 @@
 # HyperType
 
-> Blazing-fast, instant text expansion for Windows with an event-driven Rust core and on-demand SolidJS management UI.
+> Instant text expansion for Windows: an event-driven Rust engine and a native GPUI interface. No web view.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.77%2B-orange.svg)](https://www.rust-lang.org)
-[![Tauri](https://img.shields.io/badge/Tauri-v2-24C8D8.svg)](https://tauri.app)
-[![SolidJS](https://img.shields.io/badge/SolidJS-1.9-446b9e.svg)](https://www.solidjs.com)
+[![GPUI](https://img.shields.io/badge/UI-GPUI%20Kit%200.7-24292f.svg)](https://github.com/zed-industries/zed/tree/main/crates/gpui)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D6.svg)](https://www.microsoft.com/windows)
 
 
@@ -16,21 +15,11 @@ https://github.com/user-attachments/assets/14c23aa1-f9cc-4825-957a-bc2d94b228b0
 
 
 
-HyperType replaces short abbreviations with full snippets anywhere in Windows as you type (`gm` → `Good morning`, `addr` → your complete address, `sig` → email signature). Built as a native Windows utility, HyperType is engineered with a strict two-plane separation: a lightweight, resident Rust engine on the hot path, and an ephemeral SolidJS / WebView2 interface summoned only when managing snippets.
+HyperType replaces short abbreviations with full snippets anywhere in Windows as you type (`gm` → `Good morning`, `addr` → your complete address, `sig` → email signature). It has two planes: a small resident Rust engine on the hot path, and a native window to manage snippets. Since v1.2.0 the window is drawn with [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) through GPUI Kit. Versions 1.0 to 1.1 used Tauri with a SolidJS / WebView2 interface. The design and the features are the same.
 
 ---
 
-## Measured Performance (Release Build)
-
-| Metric | Target | Measured Result | Technical Reason |
-| --- | --- | --- | --- |
-| **Idle CPU** | ~0% | **0.0% (0 ms over 3s sample)** | Pure event-driven `WH_KEYBOARD_LL` hook; no polling loops or timers |
-| **Background RAM** | < 20 MB | **16.2 MB working set (2.2 MB private)** | Lean Rust core without resident web runtime |
-| **Idle WebViews** | 0 resident | **0 processes** | WebView2 process is spawned on demand and destroyed on window close |
-| **Binary Size** | Minimal | **4.23 MB** | Optimized release profile with LTO, codegen-units=1, and symbol stripping |
-| **Expansion Latency** | Sub-perceptual | **< 1 ms** | Direct Win32 `SendInput` execution on local engine thread |
-
-### Snippet Engine Benchmarks (`hypertype-core`, Release Build)
+## Snippet Engine Benchmarks (`hypertype-core`, Release Build)
 
 Measured on a library of 4,870 synthetic snippets (2-10 character triggers, 20% with a `;` prefix). Each result is the median of interleaved A/B runs against the previous engine (`6f78962`). Outputs were checked for identical behavior, including random insert, update, and remove of text and shortcut snippets.
 
@@ -41,11 +30,11 @@ Measured on a library of 4,870 synthetic snippets (2-10 character triggers, 20% 
 | **Engine memory, 4,870 snippets (peak RSS of the headless harness)** | 13.2 MB | **7.8 MB** | **-41%** |
 | **Key press to match decision** | ~45 ns | ~45 ns | unchanged (noise 45-57 ns) |
 
-The suffix index is now one flat arena trie instead of a hash map per node. A single edit changes only its own trie path, so key presses no longer wait on a full index rebuild. The harness measures the engine library alone. It does not include the keyboard hook, `SendInput`, or the UI, so the table above remains the full-app measurement.
+The suffix index is now one flat arena trie instead of a hash map per node. A single edit changes only its own trie path, so key presses no longer wait on a full index rebuild. The harness measures the engine library alone. It does not include the keyboard hook, `SendInput`, or the UI.
 
 ---
 
-## Dual-Plane Architecture
+## Architecture
 
 ```
                           HOT PLANE (Pure Rust, Always Resident)
@@ -62,21 +51,21 @@ The suffix index is now one flat arena trie instead of a hash map per node. A si
 |                                                                                         |
 +-------------------------------------------+---------------------------------------------+
                                             |
-                                            | Tauri IPC (Crossbeam / Mutex)
+                                            | Arc<AppState> + command layer
                                             v
 +-----------------------------------------------------------------------------------------+
 |                                                                                         |
 |  +--------------------+        +---------------------+        +---------------------+   |
-|  |  SolidJS Frontend  |        |    Tauri Commands   |        |    Local Storage    |   |
-|  |  OLED Dark UI (Vite)<------>+  App State / Tray   +------->+  Atomic Temp+Rename |   |
-|  |  (Spawned On-Demand)|        |  Shortcut Recorder  |        |  snippets.json      |   |
+|  |   GPUI Studio UI   |        |      App Shell      |        |    Local Storage    |   |
+|  |  Library, Editor,  <------->+   Tray, Hotkeys,    +------->+  Atomic Temp+Rename |   |
+|  |  Tokens, Settings  |        | Autostart, Updater  |        |  snippets.json      |   |
 |  +--------------------+        +---------------------+        +---------------------+   |
 |                                                                                         |
-|                    MANAGEMENT PLANE (Ephemeral WebView2, On-Demand)                     |
+|                        MANAGEMENT PLANE (Native GPUI window)                            |
 +-----------------------------------------------------------------------------------------+
 ```
 
-### 1. Hot Path: Pure Rust Core (`src-tauri/src/`)
+### 1. Hot path: `hypertype-core` (`crates/core/`)
 - **Low-Level Keyboard Hook (`keyboard.rs`):** Installs a native Win32 `WH_KEYBOARD_LL` hook with its own dedicated message pump. It captures raw key transitions and forwards character events to the engine thread over a channel.
 - **Injected Keystroke Guard:** Inspects the `LLKHF_INJECTED` flag. Synthetic keystrokes generated by HyperType itself or external automated tools are ignored, preventing feedback loops.
 - **Buffer & Suffix Matcher (`engine.rs`, `snippets.rs`):** Maintains a rolling character history buffer. Evaluates trigger matches on word boundaries with a reverse suffix trie stored in one flat arena.
@@ -87,15 +76,10 @@ The suffix index is now one flat arena trie instead of a hash map per node. A si
   - **Modifier State Recovery (`expansion/inject.rs`):** Tracks and releases physically held modifiers (`Ctrl`, `Alt`, `Shift`, `Win`) prior to expansion, then restores their exact physical state upon completion.
 - **Safety Checks (`platform.rs`):** Native Win32 `ES_PASSWORD` detection prevents expansion inside password inputs. Active IME composition suspends trigger matching to avoid corrupting multi-byte character input.
 
-### 2. Management Plane: SolidJS UI (`src/`)
-- **Zero-Flash Frameless Window:** 480x854 OLED-black window (`#000000`) with custom drag regions, Segoe Fluent window controls, and animated SVG brand mark.
-- **On-Demand Lifecycle:** Closing the window destroys the WebView2 renderer process, shedding memory back to 16 MB.
-- **Features & Capabilities:**
-  - Full CRUD management of text triggers and shortcut chords.
-  - Interactive shortcut chord recorder with conflict validation.
-  - Drag-and-drop row reordering with smooth FLIP transitions and keyboard navigation support (`ArrowUp`/`ArrowDown`).
-  - Insertion strategy toggles (Auto, Type Out, Clipboard Paste).
-  - Windows autostart configuration via per-user registry run keys (no administrator privileges required).
+### 2. Management plane: native app (`crates/app/`)
+- **Studio window (`ui/`):** Frameless dark window with a custom title bar, the snippet library with search and drag reorder, the editor, the token catalog, and settings. Built with GPUI Kit 0.7.
+- **Shell (`tray.rs`, `hotkeys.rs`, `autostart.rs`, `instance.rs`):** Tray menu, global shortcut snippets, per-user autostart, and a single-instance handshake. These keep the registry keys and identifiers of v1.x, so settings carry over.
+- **Updater (`updater.rs`, `ui/update.rs`):** Reads the same signed GitHub Releases feed as v1.x, checks the minisign signature, and runs the installer with progress in Settings.
 
 ---
 
@@ -103,40 +87,17 @@ The suffix index is now one flat arena trie instead of a hash map per node. A si
 
 ```
 HyperType/
-├── index.html                  # Frameless HTML entry with dark theme styling
-├── package.json                # Frontend scripts and Tauri API bindings
-├── tsconfig.json               # TypeScript compiler options
-├── vite.config.ts              # Vite configuration with SolidJS plugin
-├── src/                        # Management UI (SolidJS)
-│   ├── App.tsx                 # Main settings, composer, and snippet list UI
-│   ├── main.tsx                # Frontend entrypoint
-│   ├── styles.css              # Custom OLED dark design tokens & micro-animations
-│   ├── assets/                 # App assets (logo, icons)
-│   └── lib/
-│       ├── ipc.ts              # Strongly typed TypeScript wrapper for Tauri IPC
-│       └── shortcut.ts         # Shortcut recording and parsing utilities
-├── src-tauri/                  # Resident Core Engine (Rust)
-│   ├── Cargo.toml              # Rust crate manifest & Windows API dependencies
-│   ├── tauri.conf.json         # Tauri v2 configuration (tray-only startup)
-│   ├── capabilities/           # Tauri security and plugin capabilities
-│   ├── icons/                  # Windows and app icons
-│   └── src/
-│       ├── main.rs             # Application entry, tray management, worker threads
-│       ├── keyboard.rs         # WH_KEYBOARD_LL hook & message pump
-│       ├── engine.rs           # State machine, buffer tracking, trigger matching
-│       ├── snippets.rs         # Snippet store, suffix lookup, reordering logic
-│       ├── storage.rs          # Atomic JSON persistence & migration helpers
-│       ├── platform.rs         # Foreground window inspection & password detection
-│       ├── shortcuts.rs        # Global shortcut parsing and registration
-│       ├── ipc.rs              # Tauri IPC command handlers
-│       ├── consts.rs           # Virtual-key definitions
-│       ├── logging.rs          # Minimal non-blocking file logger
-│       └── expansion/
-│           ├── mod.rs          # Strategy dispatcher (Auto, Type, Clipboard)
-│           ├── inject.rs       # SendInput keystroke injection & modifier masking
-│           └── clipboard.rs    # Win32 clipboard read/write & format restoration
-└── examples/                   # Sample configuration files
-    └── HyperType-snippets.example.json
+├── crates/
+│   ├── core/            # hypertype-core: hook, engine, snippets, storage, expansion
+│   └── app/             # hypertype.exe: GPUI Studio UI, tray, hotkeys, updater
+│       └── assets/      # icon, logo, and the Windows resource file
+├── tools/sign/          # hypertype-sign: updater signature check and latest.json
+├── packaging/
+│   ├── nsis/            # Windows installer (NSIS), compatible with v1.x installs
+│   └── release.ps1      # build, sign, and publish a release
+├── scripts/dev-run.ps1  # run a local build in place of the installed app
+├── migration/           # record of the Tauri to GPUI port and its parity judge
+└── examples/            # sample snippet library
 ```
 
 ---
@@ -166,47 +127,39 @@ HyperType/
 
 ---
 
-## Getting Started & Development
+## Development
 
 ### Prerequisites
 
-1. **Operating System:** Windows 10 or 11 (x64) with Microsoft Edge WebView2 runtime.
+1. **Operating System:** Windows 10 or 11 (x64).
 2. **Rust Toolchain:** Stable Rust with the MSVC toolchain (`rustup toolchain install stable-x86_64-pc-windows-msvc`). Requires Visual Studio C++ Build Tools.
-3. **JavaScript runtime:** [Bun](https://bun.sh/) 1.3 or newer.
+3. **Installer (releases only):** NSIS 3 (`makensis`).
 
-### Setup & Development
+### Build and run
 
 ```powershell
-# 1. Clone repository
 git clone https://github.com/Hi9841/HyperType.git
 cd HyperType
 
-# 2. Install frontend dependencies
-bun install
+# Debug build and run
+cargo run -p hypertype
 
-# 3. Launch in development mode (hot reload + debug core)
-bun tauri dev
+# Run a local build in place of the installed HyperType (same data folder)
+powershell -ExecutionPolicy Bypass -File scripts/dev-run.ps1
+powershell -ExecutionPolicy Bypass -File scripts/dev-run.ps1 -Restore
 ```
-
-### Production Build & Packaging
-
-```powershell
-# Build release binaries and NSIS installer
-bun run dist
-```
-
-Outputs:
-- **Tauri NSIS Installer:** `src-tauri/target/release/bundle/nsis/HyperType_<version>_x64-setup.exe`
-- **Release Binary:** `src-tauri/target/release/hypertype.exe`
 
 ### Releases and updater
 
-GitHub Actions publishes tagged releases. Keep the version in `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` identical, then push the matching `v<version>` tag.
+Keep the version identical in `crates/app/Cargo.toml`, `crates/core/Cargo.toml`, and `tools/sign/Cargo.toml`. Then run the stages of `packaging/release.ps1` (see the script header):
 
-The repository must define `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets. The release workflow builds the signed NSIS installer. It uploads the installer, the signature, and the `latest.json` file for the in-app updater.
+1. `-Build` builds `dist/HyperType_<version>_x64-setup.exe` on this machine.
+2. `-SignInCi` uploads the installer to a draft release and runs the manual **Sign release** workflow. The workflow signs the installer with the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. Then the script checks the signature and writes `dist/latest.json`. (`-SignLocal` signs on this machine if you have the key password.)
+3. `-Publish` uploads `latest.json` and publishes the release.
+
+The feed is `releases/latest/download/latest.json`. It has the `windows-x86_64` and `windows-x86_64-nsis` entries that v1.x and v1.2+ read, and both versions trust the same updater key. Thus v1.x users update to the native app in place: the installer keeps the v1.x install folder, registry keys, and `/P /UPDATE /R` arguments.
 
 ---
-
 
 ## License
 

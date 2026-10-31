@@ -15,9 +15,10 @@ bun install
 ```
 
 Scripts run under Node (Playwright CDP). Edge is preferred; Chrome is the
-fallback. `capture-reference` runs `bun run build` in the repo root, then
-serves `dist/` on :1420. `reference/meta.json` records git HEAD and whether
-`src/` is dirty.
+fallback. The SolidJS UI left the repo in v1.2.0, so `capture-reference`
+checks out tag `v1.1.8` once into `.web-ref/` (a git worktree), runs
+`bun run build` there, and serves its `dist/` on :1420 (`scripts/web-ref.ts`).
+`reference/meta.json` records the reference commit.
 
 ## Commands
 

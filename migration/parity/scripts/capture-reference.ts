@@ -2,53 +2,26 @@
  * Drive the SolidJS Vite UI with Playwright and save reference PNGs.
  * Prefers Edge (WebView2). Falls back to Chrome/Chromium CDP when Edge is missing.
  *
- * Rebuilds repo `dist/` from current `src/` before serving (stale-reference fix).
+ * Builds the v1.1.8 web UI (web-ref.ts) before serving (stale-reference fix).
  * After each state's actions, settles animations then screenshots.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { launchParityBrowser } from "./browser.ts";
-import { run, runText, sleep } from "./node-utils.ts";
+import { sleep } from "./node-utils.ts";
 import {
   AUTO_STATES,
   REFERENCE_DIR,
-  REPO_ROOT,
   type AutoState,
 } from "./paths.ts";
 import { windowsDisplayScale } from "./scale.ts";
 import { settleForScreenshot, INFINITE_ANIM_FREEZE_MS } from "./settle.ts";
 import { startStaticServer } from "./static-server.ts";
+import { WEB_REF, buildWebReference, webRefCommit } from "./web-ref.ts";
 
 const DEV_URL = "http://127.0.0.1:1420";
 const VIEWPORT = { width: 960, height: 640 };
-
-function rebuildDist(): void {
-  console.log("Rebuilding SolidJS dist from current src/ (bun run build)...");
-  const proc = run("bun", ["run", "build"], { cwd: REPO_ROOT, inherit: true });
-  if (proc.status !== 0) {
-    throw new Error("bun run build failed; cannot capture a fresh reference");
-  }
-}
-
-function gitMeta(): {
-  gitCommit: string;
-  srcDirty: boolean;
-  gitDescribe: string;
-} {
-  const head = runText("git", ["rev-parse", "HEAD"], { cwd: REPO_ROOT });
-  const dirty = runText("git", ["status", "--porcelain", "--", "src/"], {
-    cwd: REPO_ROOT,
-  });
-  const describe = runText("git", ["describe", "--always", "--dirty"], {
-    cwd: REPO_ROOT,
-  });
-  return {
-    gitCommit: (head.stdout || "").trim() || "unknown",
-    srcDirty: (dirty.stdout || "").trim().length > 0,
-    gitDescribe: (describe.stdout || "").trim() || "unknown",
-  };
-}
 
 async function resetLibrary(page: Page): Promise<void> {
   let lastErr: unknown;
@@ -373,11 +346,9 @@ async function main() {
     }
   }
 
-  rebuildDist();
-  const git = gitMeta();
-  console.log(
-    `Git HEAD ${git.gitCommit} (src dirty: ${git.srcDirty ? "yes" : "no"})`,
-  );
+  buildWebReference();
+  const refCommit = webRefCommit();
+  console.log(`Reference ${WEB_REF} at ${refCommit}`);
 
   const scale = windowsDisplayScale();
   console.log(`Display scale: ${scale}`);
@@ -410,13 +381,13 @@ async function main() {
       deviceScaleFactor: scale,
       date: new Date().toISOString(),
       states,
-      gitCommit: git.gitCommit,
-      gitDescribe: git.gitDescribe,
-      srcDirty: git.srcDirty,
+      gitCommit: refCommit,
+      gitDescribe: WEB_REF,
+      srcDirty: false,
       infiniteAnimFreezeMs: INFINITE_ANIM_FREEZE_MS,
       note: launched.channel.includes("edge")
-        ? "Edge/WebView2 channel; rebuilt dist before capture; animations settled"
-        : "Edge missing; Chrome/Chromium CDP fallback; rebuilt dist before capture; animations settled",
+        ? "Edge/WebView2 channel; built the v1.1.8 web UI before capture; animations settled"
+        : "Edge missing; Chrome/Chromium CDP fallback; built the v1.1.8 web UI before capture; animations settled",
     };
     writeFileSync(
       join(REFERENCE_DIR, "meta.json"),
