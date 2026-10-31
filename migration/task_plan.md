@@ -6,14 +6,22 @@ that has the same functions, layout, colors, type, motion, and copy as the
 v1.1.8 SolidJS UI, then remove the WebView stack.
 
 ## Current state
-Phase 1 (parity judge) complete and committed (2dcf293). Phase 2 design doc
-`RULEBOOK.md` written; its adversarial review runs. Phase 3 started:
-S7a (updater backend, wt/s7a) and S1 (foundation, wt/s1) run in parallel.
+All UI slices are merged on main: S1 foundation, S2+S3 sidebar, S4 editor,
+S5 settings, S6 tokens, S7a updater backend, S7b update UI (b4832d1).
+Phase 5 full-frame sweep recorded (port-progress.md); geometry matched to the
+reference boxes within 1px per slice; remaining differences are D1/D2/D4/D5.
+Grok balance is exhausted; the coordinator works directly (owner choice).
 
 ## Next action
-Wait for S7a, S1, and the RULEBOOK review (task IDs in `port-progress.md`).
-Review each result; merge S1 into main; then create worktrees for S2+S3,
-S4, S5+S6 and launch them in parallel.
+1. Owner visual sign-off on the side-by-side page (shown in chat).
+2. Real-app checks need the installed HyperType stopped (it now runs
+   elevated, PID 19256, so only the owner can quit it): then run the GPUI
+   release build in its place (scripts/dev-run.ps1) and check expansion,
+   tray, close-to-tray, single instance, hotkeys, autostart, RAM, size.
+3. Phase 6 packaging plan (NSIS compatible with the v1.1.8 updater flags
+   /P /UPDATE /R /ARGS, same install path + uninstall key, minisign-signed
+   latest.json, local release per owner memory) - confirm before any
+   release or outward step.
 
 ## Scope and constraints
 - Spec = `src/App.tsx`, `src/styles.css`, `src/components/Icons.tsx`,
@@ -58,7 +66,7 @@ S4, S5+S6 and launch them in parallel.
    element map, state ownership, motion table, allowed deviations.
    Adversarial review (not a bakeoff: this is a redesign posture). Status: in_progress.
 3. Translation slices, one Grok agent at a time, each with a separate
-   read-only review and a parity run. Status: in_progress (S1, S7a).
+   read-only review and a parity run. Status: complete (all merged).
    - S1 Tokens, system fonts, 13 SVG icons, frameless window, title bar.
    - S2 Sidebar: search, New/Export/Import, toast, list, rows, empty state,
      native confirm + file dialogs.
@@ -71,8 +79,8 @@ S4, S5+S6 and launch them in parallel.
    - S6 Token catalog modal.
    - S7 Updater without WebView: latest.json, minisign verify, progress,
      passive NSIS install, relaunch, startup check, title-bar pill.
-4. Build and run: clippy clean, release build, smoke from tray. Status: pending.
-5. Parity: all states + scenarios green; owner visual sign-off. Status: pending.
+4. Build and run: clippy clean, release build, smoke from tray. Status: in_progress (needs the installed app stopped).
+5. Parity: all states + scenarios green; owner visual sign-off. Status: in_progress (sweep done; sign-off pending).
 6. Packaging and cutover: NSIS per-user installer (same path, uninstall key,
    feed), release script, remove WebView stack, README. Status: pending.
 
@@ -93,9 +101,15 @@ S4, S5+S6 and launch them in parallel.
 - Build tool: cargo, not blaze.
 - Phase 0 signed off.
 
+## Owner answers (2026-10-31, later)
+- Grok balance exhausted (HTTP 402). Owner: "You (Opus) do it directly":
+  the coordinator implements and verifies the remaining work in this thread,
+  with no subagents. Review = coordinator side-by-side + boxes + live checks.
+- Phase 6 (NSIS installer, release script, remove Tauri/SolidJS/Bun) is IN
+  SCOPE. Confirm each release-affecting or outward step with the owner first.
+
 ## Open questions (owner)
-1. Confirm Phase 6 (new installer + release script, delete Tauri/Solid/Bun)
-   is in scope. It touches the release contract. Needed before Phase 6 only.
+(none)
 
 ## Blockers
 None.
