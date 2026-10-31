@@ -778,25 +778,7 @@ impl Sidebar {
                                     .tooltip(move |window, cx| {
                                         Tooltip::new("Clear search").build(window, cx)
                                     })
-                                    .on_key_down({
-                                        let entity = entity.clone();
-                                        move |ev, window, cx| {
-                                            if ev.keystroke.modifiers.modified() {
-                                                return;
-                                            }
-                                            match ev.keystroke.key.as_str() {
-                                                "enter" | "space" => {
-                                                    entity
-                                                        .update(cx, |this, cx| {
-                                                            this.clear_search(window, cx);
-                                                        })
-                                                        .ok();
-                                                    cx.stop_propagation();
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    })
+                                    // Enter/Space: GPUI fires on_click on KeyUp for the focused element.
                                     .on_click({
                                         let entity = entity.clone();
                                         move |_, window, cx| {
@@ -842,25 +824,7 @@ impl Sidebar {
                                 s.shadow(tokens::focus_visible_shadows(tokens::surface_1()))
                             })
                             .hover(|s| s.bg(tokens::accent_hover()))
-                            .on_key_down({
-                                let entity = entity.clone();
-                                move |ev, window, cx| {
-                                    if ev.keystroke.modifiers.modified() {
-                                        return;
-                                    }
-                                    match ev.keystroke.key.as_str() {
-                                        "enter" | "space" => {
-                                            entity
-                                                .update(cx, |this, cx| {
-                                                    this.start_new(window, cx);
-                                                })
-                                                .ok();
-                                            cx.stop_propagation();
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            })
+                            // Enter/Space: GPUI fires on_click on KeyUp for the focused element.
                             .on_click({
                                 let entity = entity.clone();
                                 move |_, window, cx| {
@@ -1155,21 +1119,7 @@ fn io_button(
                         .border_color(tokens::line_2())
                 })
                 .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
-                .on_key_down({
-                    let on_click = on_click.clone();
-                    move |ev, window, cx| {
-                        if ev.keystroke.modifiers.modified() {
-                            return;
-                        }
-                        match ev.keystroke.key.as_str() {
-                            "enter" | "space" => {
-                                on_click(window, cx);
-                                cx.stop_propagation();
-                            }
-                            _ => {}
-                        }
-                    }
-                })
+                // Enter/Space: GPUI fires on_click on KeyUp for the focused element.
                 .on_click({
                     let on_click = on_click.clone();
                     move |_, window, cx| on_click(window, cx)
