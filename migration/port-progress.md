@@ -390,3 +390,15 @@ in `task_plan.md`.
   stop in DOM order, modals do not trap focus; inline text wraps per word.
 - S1 fix round 3 steered with A7 (shared widgets tab_index 0 + root focus
   for the first Tab). S6 fix round 2: grok-4.5 high, hypertype-gpui-s6-fix-r2.
+
+## 2026-10-31 - S4 accepted (pending merge after S1)
+- d43f751: sub-hint line box 20 (-1 margin), token + All Tokens h 25, Tab
+  consumed while recording. Offsets: all 12 elements within 1px (11 exact).
+- Coordinator verification (instead of a third Grok round; small diff with
+  measured proof): fresh captures from the d43f751 build reproduce
+  default-selected 1.760/3.892 and shortcut-recording 2.284/5.467; stacked
+  side-by-side shows all rows aligned; token buttons a few px wider = mono
+  glyph advance (D4, as ruled for All Tokens in review r2). Remaining
+  blocks: D2 (title/label letter-spacing) + D4. ACCEPTED.
+- Merge order: S1 (r3) -> rebase S4 (shared widget signatures may change)
+  -> S6 -> then S2 and S5 start.
