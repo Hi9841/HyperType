@@ -80,13 +80,16 @@ pub struct SettingsModal {
     auto_words_drag: Rc<Cell<Option<f32>>>,
     wpm_drag: Rc<Cell<Option<f32>>>,
     restore_drag: Rc<Cell<Option<f32>>>,
-    /// Created on first render (Studio::new cannot pass Window yet — Request).
-    words_edit: Option<Entity<InputState>>,
-    wpm_edit: Option<Entity<InputState>>,
-    restore_edit: Option<Entity<InputState>>,
-    _words_sub: Option<Subscription>,
-    _wpm_sub: Option<Subscription>,
-    _restore_sub: Option<Subscription>,
+    /// `.value-edit` inputs (RULEBOOK section 5: created once in `new`).
+    words_edit: Entity<InputState>,
+    wpm_edit: Entity<InputState>,
+    restore_edit: Entity<InputState>,
+    _edit_subs: [Subscription; 3],
+    /// Last status value written into each `.value-edit` (words, wpm,
+    /// restore). Solid's `value={signal()}` writes the input only when the
+    /// signal changes; writing on every render would undo typing before the
+    /// Enter -> blur -> commit path reads it.
+    synced: [Cell<Option<u32>>; 3],
     settings_error: String,
     repairing_hook: bool,
     elevating: bool,
@@ -99,41 +102,13 @@ pub struct SettingsModal {
 impl SettingsModal {
     pub fn new(
         studio: WeakEntity<Studio>,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let _observe = studio
             .upgrade()
             .map(|entity| cx.observe(&entity, |_, _, cx| cx.notify()))
             .expect("Studio must exist when SettingsModal is created");
-
-        Self {
-            studio,
-            _observe,
-            auto_words_drag: Rc::new(Cell::new(None)),
-            wpm_drag: Rc::new(Cell::new(None)),
-            restore_drag: Rc::new(Cell::new(None)),
-            words_edit: None,
-            wpm_edit: None,
-            restore_edit: None,
-            _words_sub: None,
-            _wpm_sub: None,
-            _restore_sub: None,
-            settings_error: String::new(),
-            repairing_hook: false,
-            elevating: false,
-            hook_message: String::new(),
-            poll_task: None,
-            hook_msg_task: None,
-            scroll: ScrollHandle::new(),
-        }
-    }
-
-    /// InputState needs a Window; Studio::new currently calls us without one.
-    fn ensure_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.words_edit.is_some() {
-            return;
-        }
 
         let words_edit = cx.new(|cx| {
             InputState::new(window, cx)
@@ -151,13 +126,13 @@ impl SettingsModal {
                 .default_value("5000")
         });
 
-        let auto_words_drag = self.auto_words_drag.clone();
-        let wpm_drag = self.wpm_drag.clone();
-        let restore_drag = self.restore_drag.clone();
+        let auto_words_drag: Rc<Cell<Option<f32>>> = Rc::new(Cell::new(None));
+        let wpm_drag: Rc<Cell<Option<f32>>> = Rc::new(Cell::new(None));
+        let restore_drag: Rc<Cell<Option<f32>>> = Rc::new(Cell::new(None));
 
-        self._words_sub = Some(cx.subscribe_in(&words_edit, window, {
+        let words_sub = cx.subscribe_in(&words_edit, window, {
             let edit = words_edit.clone();
-            let drag = auto_words_drag;
+            let drag = auto_words_drag.clone();
             move |this, _input, event: &InputEvent, window, cx| {
                 let current = this.current_auto_words(cx) as f32;
                 let mut committed = None;
@@ -178,11 +153,11 @@ impl SettingsModal {
                     this.commit_auto_words(v.round() as u32, cx);
                 }
             }
-        }));
+        });
 
-        self._wpm_sub = Some(cx.subscribe_in(&wpm_edit, window, {
+        let wpm_sub = cx.subscribe_in(&wpm_edit, window, {
             let edit = wpm_edit.clone();
-            let drag = wpm_drag;
+            let drag = wpm_drag.clone();
             move |this, _input, event: &InputEvent, window, cx| {
                 let current = this.current_wpm(cx) as f32;
                 let mut committed = None;
@@ -203,11 +178,11 @@ impl SettingsModal {
                     this.commit_wpm(v.round() as u32, cx);
                 }
             }
-        }));
+        });
 
-        self._restore_sub = Some(cx.subscribe_in(&restore_edit, window, {
+        let restore_sub = cx.subscribe_in(&restore_edit, window, {
             let edit = restore_edit.clone();
-            let drag = restore_drag;
+            let drag = restore_drag.clone();
             move |this, _input, event: &InputEvent, window, cx| {
                 let current = this.current_restore_ms(cx) as f32;
                 let mut committed = None;
@@ -228,11 +203,28 @@ impl SettingsModal {
                     this.commit_restore_ms(v.round() as u32, cx);
                 }
             }
-        }));
+        });
 
-        self.words_edit = Some(words_edit);
-        self.wpm_edit = Some(wpm_edit);
-        self.restore_edit = Some(restore_edit);
+
+        Self {
+            studio,
+            _observe,
+            auto_words_drag,
+            wpm_drag,
+            restore_drag,
+            words_edit,
+            wpm_edit,
+            restore_edit,
+            _edit_subs: [words_sub, wpm_sub, restore_sub],
+            synced: [Cell::new(None), Cell::new(None), Cell::new(None)],
+            settings_error: String::new(),
+            repairing_hook: false,
+            elevating: false,
+            hook_message: String::new(),
+            poll_task: None,
+            hook_msg_task: None,
+            scroll: ScrollHandle::new(),
+        }
     }
 
     fn status(&self, cx: &App) -> Option<Status> {
@@ -444,15 +436,16 @@ impl SettingsModal {
 
     fn sync_edit_value(
         input: &Entity<InputState>,
+        synced: &Cell<Option<u32>>,
         value: u32,
         window: &mut Window,
         cx: &mut App,
     ) {
-        let text = value.to_string();
-        let focused = input.read(cx).focus_handle(cx).is_focused(window);
-        if focused {
+        if synced.get() == Some(value) {
             return;
         }
+        synced.set(Some(value));
+        let text = value.to_string();
         if input.read(cx).value().as_ref() == text {
             return;
         }
@@ -551,7 +544,6 @@ impl SettingsModal {
 
 impl Render for SettingsModal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.ensure_inputs(window, cx);
         self.ensure_poll(cx);
 
         let Some(studio_entity) = self.studio.upgrade() else {
@@ -567,9 +559,9 @@ impl Render for SettingsModal {
             )
         };
 
-        let words_edit = self.words_edit.clone().expect("ensure_inputs");
-        let wpm_edit = self.wpm_edit.clone().expect("ensure_inputs");
-        let restore_edit = self.restore_edit.clone().expect("ensure_inputs");
+        let words_edit = self.words_edit.clone();
+        let wpm_edit = self.wpm_edit.clone();
+        let restore_edit = self.restore_edit.clone();
 
         let auto_words = self
             .auto_words_drag
@@ -587,9 +579,9 @@ impl Render for SettingsModal {
             .map(|v| v.round() as u32)
             .unwrap_or(status.restore_delay_ms);
 
-        Self::sync_edit_value(&words_edit, auto_words, window, cx);
-        Self::sync_edit_value(&wpm_edit, wpm, window, cx);
-        Self::sync_edit_value(&restore_edit, restore_ms, window, cx);
+        Self::sync_edit_value(&words_edit, &self.synced[0], auto_words, window, cx);
+        Self::sync_edit_value(&wpm_edit, &self.synced[1], wpm, window, cx);
+        Self::sync_edit_value(&restore_edit, &self.synced[2], restore_ms, window, cx);
 
         let entity = cx.entity();
         let entity_id = entity.entity_id();
@@ -637,6 +629,7 @@ impl Render for SettingsModal {
                 )
             })
             .child(pref_row(
+                ROW_HEIGHTS[0],
                 true,
                 v_flex()
                     .gap(px(2.))
@@ -664,6 +657,7 @@ impl Render for SettingsModal {
                 ),
             ))
             .child(pref_row(
+                ROW_HEIGHTS[1],
                 true,
                 v_flex()
                     .gap(px(2.))
@@ -691,6 +685,7 @@ impl Render for SettingsModal {
                 ),
             ))
             .child(pref_row(
+                ROW_HEIGHTS[2],
                 true,
                 v_flex()
                     .gap(px(2.))
@@ -720,6 +715,7 @@ impl Render for SettingsModal {
                 ),
             ))
             .child(pref_row(
+                ROW_HEIGHTS[3],
                 true,
                 v_flex()
                     .gap(px(2.))
@@ -765,6 +761,7 @@ impl Render for SettingsModal {
                 ),
             ))
             .child(pref_row(
+                ROW_HEIGHTS[4],
                 true,
                 v_flex()
                     .gap(px(2.))
@@ -808,6 +805,7 @@ impl Render for SettingsModal {
                 ),
             ))
             .child(pref_row(
+                ROW_HEIGHTS[5],
                 true,
                 v_flex()
                     .gap(px(2.))
@@ -837,6 +835,7 @@ impl Render for SettingsModal {
                 ),
             ))
             .child(pref_row(
+                ROW_HEIGHTS[6],
                 true,
                 v_flex()
                     .gap(px(2.))
@@ -880,6 +879,7 @@ impl Render for SettingsModal {
                 ),
             ))
             .child(pref_row(
+                ROW_HEIGHTS[7],
                 true,
                 v_flex()
                     .gap(px(2.))
@@ -927,6 +927,7 @@ impl Render for SettingsModal {
                 ),
             ))
             .child(pref_row(
+                ROW_HEIGHTS[8],
                 false, // last row: no border
                 v_flex()
                     .gap(px(2.))
@@ -1139,7 +1140,16 @@ fn pref_title(text: impl Into<SharedString>) -> impl IntoElement {
         .child(text.into())
 }
 
+/// Border-box heights of the nine `.pref-row`s on the reference pixel grid
+/// (rule 23a). Box tops 115, 185.5, 256, 344.5, 416.8, 489.09, 559.59,
+/// 631.89, 705.02 round half up to 115, 186, 256, 345, 417, 489, 560, 632,
+/// 705 (end 781); minus the 14px body gap. Rows with an inline `.value-edit`
+/// or hook badge are taller than 56.5 because the inline box grows the
+/// description line (19.8 / 20.63px).
+const ROW_HEIGHTS: [f32; 9] = [57., 56., 75., 58., 58., 57., 58., 59., 76.];
+
 fn pref_row(
+    height: f32,
     bordered: bool,
     info: impl IntoElement,
     control: impl IntoElement,
@@ -1150,6 +1160,10 @@ fn pref_row(
         .items_center()
         .justify_between()
         .gap(px(16.))
+        // CSS flex items keep min-height:auto and never shrink below their
+        // content; Taffy shrinks them to fit the scroll body unless told not to.
+        .flex_shrink_0()
+        .h(px(height))
         .py(px(8.))
         .when(bordered, |this| {
             this.border_b_1().border_color(tokens::sep())
