@@ -43,6 +43,15 @@ function Assert-Ok([string]$what) {
   if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }
 
+# 'none', 'draft', or 'published'. PowerShell 5.1 turns native stderr into a
+# terminating error under 'Stop', and gh writes "release not found" there.
+function Get-ReleaseState {
+  $ErrorActionPreference = 'Continue'
+  $draft = gh release view $tag --json isDraft -q .isDraft 2>$null
+  if ($LASTEXITCODE -ne 0) { return 'none' }
+  if ($draft -eq 'true') { return 'draft' } else { return 'published' }
+}
+
 if ($Build) {
   cargo build --release --locked -p hypertype -p hypertype-sign
   Assert-Ok 'cargo build'
@@ -57,11 +66,11 @@ if ($Build) {
 }
 
 if ($SignInCi) {
-  $existing = gh release view $tag --json isDraft -q .isDraft 2>$null
-  if ($LASTEXITCODE -ne 0) {
+  $state = Get-ReleaseState
+  if ($state -eq 'none') {
     gh release create $tag $installer --draft --title "HyperType $tag" --notes-file $notesPath
     Assert-Ok 'gh release create --draft'
-  } elseif ($existing -eq 'true') {
+  } elseif ($state -eq 'draft') {
     gh release upload $tag $installer --clobber
     Assert-Ok 'gh release upload'
   } else {
@@ -95,12 +104,12 @@ if ($SignLocal) {
 
 if ($Publish) {
   if (-not (Test-Path $latest)) { throw 'dist\latest.json is missing; sign first' }
-  $draft = gh release view $tag --json isDraft -q .isDraft 2>$null
-  if ($LASTEXITCODE -ne 0) {
+  $state = Get-ReleaseState
+  if ($state -eq 'none') {
     gh release create $tag $installer "$installer.sig" $latest --title "HyperType $tag" --notes-file $notesPath --latest
     Assert-Ok 'gh release create'
   } else {
-    if ($draft -ne 'true') { throw "$tag is already published" }
+    if ($state -ne 'draft') { throw "$tag is already published" }
     gh release upload $tag "$installer.sig" $latest --clobber
     Assert-Ok 'gh release upload'
     gh release edit $tag --draft=false --latest
