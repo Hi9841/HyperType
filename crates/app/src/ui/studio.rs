@@ -124,9 +124,11 @@ impl Studio {
         // Initial selection once when the first non-empty list arrives (248-257).
         this.maybe_initial_select(window, cx);
 
-        // Silent update check at window open (App.tsx:205).
+        // Silent update check at window open (App.tsx:205). Deferred: `check`
+        // updates Studio, which is still being built here (re-entrant update
+        // panics).
         let studio_entity = cx.entity();
-        update::check(&studio_entity, false, cx);
+        cx.defer(move |cx| update::check(&studio_entity, false, cx));
 
         this
     }
