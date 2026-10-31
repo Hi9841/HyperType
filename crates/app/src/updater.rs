@@ -32,8 +32,8 @@ const MAX_REDIRECTS: u32 = 11;
 const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
-/// Public API for the future UI update flow.
-#[allow(dead_code)] // Public API for the future UI update flow.
+/// A newer release from the feed, with the URL and signature to install it.
+#[derive(Clone)]
 pub struct UpdateInfo {
     pub version: String,
     pub body: Option<String>,
@@ -43,14 +43,13 @@ pub struct UpdateInfo {
 
 impl UpdateInfo {
     /// Feed signature string (base64 of the minisign `.sig` file). For probes.
-    #[allow(dead_code)] // Public API for the future UI update flow.
+    #[allow(dead_code)] // Used by the update-probe CLI only.
     pub fn signature(&self) -> &str {
         &self.signature
     }
 }
 
-/// Public API for the future UI update flow.
-#[allow(dead_code)] // Public API for the future UI update flow.
+/// Download progress reported to the UI (App.tsx Started/Progress/Finished).
 pub enum Progress {
     Started { content_length: Option<u64> },
     Chunk(usize),
@@ -62,7 +61,6 @@ pub enum Progress {
 /// 15 s total timeout via ureq `.timeout`. Target `windows-x86_64-nsis`
 /// with Tauri fallbacks. `Ok(None)` when the feed version is not newer
 /// than `CARGO_PKG_VERSION`.
-#[allow(dead_code)] // Public API for the future UI update flow.
 pub fn check() -> Result<Option<UpdateInfo>, String> {
     check_with(env!("CARGO_PKG_VERSION"))
 }
@@ -70,7 +68,6 @@ pub fn check() -> Result<Option<UpdateInfo>, String> {
 /// Blocking. Must run on a worker thread (never the GPUI UI thread).
 ///
 /// Same as [`check`], with an explicit current version string.
-#[allow(dead_code)] // Public API for the future UI update flow.
 pub fn check_with(current_version: &str) -> Result<Option<UpdateInfo>, String> {
     let current = parse_version(current_version)?;
     let url = feed_url();
@@ -125,7 +122,6 @@ pub fn check_with(current_version: &str) -> Result<Option<UpdateInfo>, String> {
 ///
 /// Download, verify minisign, write the installer to a temp file, launch it
 /// in passive mode like Tauri, then exit the process.
-#[allow(dead_code)] // Public API for the future UI update flow.
 pub fn download_and_install(
     info: &UpdateInfo,
     on_progress: impl FnMut(Progress),
@@ -153,7 +149,7 @@ pub fn download_and_install(
 ///
 /// Callers MUST release the single-instance guard and stop the keyboard hook first,
 /// otherwise the new process sees the old instance and exits as secondary.
-#[allow(dead_code)] // Public API for the future UI update flow.
+#[allow(dead_code)] // On Windows the installer restarts the app (/R); kept for parity with tauri-plugin-process.
 pub fn relaunch() -> Result<(), String> {
     match std::env::current_exe() {
         Ok(exe) => {
@@ -171,7 +167,6 @@ pub fn relaunch() -> Result<(), String> {
 
 /// Download + verify + write temp installer. Does not launch. Used by
 /// `--update-probe` and by [`download_and_install`].
-#[allow(dead_code)] // Public API for the future UI update flow.
 pub fn download_verified_to_temp(
     info: &UpdateInfo,
     mut on_progress: impl FnMut(Progress),
@@ -183,7 +178,6 @@ pub fn download_verified_to_temp(
 
 /// Verify raw bytes against the embedded pubkey and a feed signature.
 /// Exposed for the probe tamper path.
-#[allow(dead_code)] // Public API for the future UI update flow.
 pub fn verify_signature(data: &[u8], release_signature: &str) -> Result<(), String> {
     // tauri-plugin-updater updater.rs:1524–1533
     let pub_key_decoded = b64_to_string(PUBKEY_B64)?;
