@@ -295,8 +295,8 @@ impl Editor {
         self.recorder_focus.focus(window, cx);
 
         let weak = cx.weak_entity();
-        // Every key is consumed while recording (App.tsx:407); bare "V" must not type.
-        // Tab is left alone so focus can move; recorder blur then cancels (finding 7).
+        // Every key is consumed while recording (App.tsx:407), including Tab.
+        // Blur cancel still handles real focus moves (click elsewhere, deactivation).
         let key_sub = cx.intercept_keystrokes({
             let weak = weak.clone();
             move |event, window, cx| {
@@ -307,9 +307,6 @@ impl Editor {
                 if !recording {
                     return;
                 }
-                if event.keystroke.key == "tab" {
-                    return;
-                }
                 window.prevent_default();
                 cx.stop_propagation();
                 let _ = weak.update(cx, |this, cx| {
@@ -318,6 +315,10 @@ impl Editor {
                     }
                     if event.keystroke.key == "escape" {
                         this.stop_recording(cx);
+                        return;
+                    }
+                    if event.keystroke.key == "tab" {
+                        // Spec consumes Tab; do not move focus or cancel via Tab.
                         return;
                     }
                     if let Some(chord) = chord::from_keystroke(&event.keystroke) {
@@ -596,10 +597,14 @@ impl Editor {
                     )
                     .child(
                         // .canvas-sub-hint — styles.css:529-532
-                        // Explicit 18px line box (12px × 1.5); rule 23.
+                        // Inline span in 13px/1.5 parent strut → 19.5px; GPUI rounds
+                        // px(19.5) to 20 (gpui-pre style.rs:554-555). Pin 20 for the
+                        // line box; mb(-1) cancels the 0.5px integer overshoot so the
+                        // stack below stays within 1px of Chromium.
                         div()
                             .text_size(px(12.))
-                            .line_height(px(18.))
+                            .line_height(px(20.))
+                            .mb(px(-1.))
                             .text_color(tokens::ink_2())
                             .child(sub_hint.to_string()),
                     ),
@@ -1090,8 +1095,8 @@ fn token_btn(
         .font_family(tokens::FONT_MONO)
         .text_size(px(11.))
         .line_height(px(16.5))
-        // Chromium border-box: 16.5 LH + 6 pad + 2 border ≈ 24.5; pin 24 for rule 23.
-        .h(px(24.))
+        // Chromium border-box ≈ 24.5; reference box is 25px. Pin 25.
+        .h(px(25.))
         .flex()
         .items_center()
         .px(px(8.))
@@ -1125,7 +1130,8 @@ fn token_btn_all(
         .text_size(px(11.))
         .line_height(px(16.5))
         .font_weight(FontWeight::SEMIBOLD)
-        .h(px(24.))
+        // Match token-btn height; reference box is 25px.
+        .h(px(25.))
         .flex()
         .items_center()
         .px(px(10.))
