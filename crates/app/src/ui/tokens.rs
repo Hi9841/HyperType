@@ -1,8 +1,6 @@
 //! Design tokens from `src/styles.css:4-36`. Views use only these names.
 
-// Later slices use the full token set; S1 only paints the shell.
-#![allow(dead_code)]
-
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::base::{Easing, Transition};
@@ -25,6 +23,7 @@ pub fn surface_3() -> Hsla {
     rgb(0x1e1e26).into()
 }
 /// #111115
+#[allow(dead_code)] // S5 settings fields
 pub fn field() -> Hsla {
     rgb(0x111115).into()
 }
@@ -37,14 +36,17 @@ pub fn line_2() -> Hsla {
     rgb(0x282832).into()
 }
 /// #18181f
+#[allow(dead_code)] // S2/S4 separators
 pub fn sep() -> Hsla {
     rgb(0x18181f).into()
 }
 /// #202028
+#[allow(dead_code)] // S5 switch track
 pub fn control() -> Hsla {
     rgb(0x202028).into()
 }
 /// #30303c
+#[allow(dead_code)] // S5 switch track
 pub fn control_line() -> Hsla {
     rgb(0x30303c).into()
 }
@@ -65,10 +67,12 @@ pub fn accent() -> Hsla {
     rgb(0x7c2dff).into()
 }
 /// #8f47ff
+#[allow(dead_code)] // S4/S5 button hover
 pub fn accent_hover() -> Hsla {
     rgb(0x8f47ff).into()
 }
 /// #681ee0
+#[allow(dead_code)] // S4/S5 button active
 pub fn accent_down() -> Hsla {
     rgb(0x681ee0).into()
 }
@@ -83,6 +87,7 @@ pub fn ring() -> Hsla {
     c
 }
 /// rgba(124,45,255,.20)
+#[allow(dead_code)] // S4 field focus ring
 pub fn ring_soft() -> Hsla {
     let mut c: Hsla = rgb(0x7c2dff).into();
     c.a = 0.20;
@@ -93,6 +98,7 @@ pub fn danger() -> Hsla {
     rgb(0xff453a).into()
 }
 /// rgba(255,69,58,.12)
+#[allow(dead_code)] // S4 delete hover
 pub fn danger_tint() -> Hsla {
     let mut c: Hsla = rgb(0xff453a).into();
     c.a = 0.12;
@@ -112,8 +118,10 @@ pub fn pill_end() -> Hsla {
 }
 
 pub const FONT_UI: &str = "Segoe UI Variable Text";
+#[allow(dead_code)] // font stack fallback
 pub const FONT_UI_FALLBACK: &str = "Segoe UI";
 pub const FONT_MONO: &str = "Cascadia Code";
+#[allow(dead_code)] // value_edit mono metrics
 pub const FONT_MONO_FALLBACKS: &[&str] = &["Cascadia Mono", "Consolas"];
 
 pub const ROOT_SIZE: f32 = 13.0;
@@ -124,18 +132,62 @@ pub const BRAND_PAUSED_OPACITY: f32 = 0.45;
 
 pub const FAST: Duration = Duration::from_millis(130);
 pub const SMOOTH: Duration = Duration::from_millis(180);
+#[allow(dead_code)] // S5/S6 modal_frame fade
 pub const MODAL_FADE: Duration = Duration::from_millis(150);
+#[allow(dead_code)] // S4 recorder pulse
 pub const LISTENING: Duration = Duration::from_millis(1200);
+#[allow(dead_code)] // btn_check_updates spin
 pub const SPIN: Duration = Duration::from_secs(1);
 
-/// cubic-bezier(0.2, 0, 0, 1)
+/// Custom token EASE_OUT: cubic-bezier(0.2, 0, 0, 1) — styles.css motion token.
 pub fn ease_out() -> Easing {
     Easing::cubic_bezier(0.2, 0.0, 0.0, 1.0).expect("EASE_OUT")
 }
 
-/// cubic-bezier(0.32, 1.25, 0.32, 1)
-pub fn spring() -> Easing {
-    Easing::cubic_bezier(0.32, 1.25, 0.32, 1.0).expect("SPRING")
+/// CSS keyword `ease-out` = cubic-bezier(0, 0, 0.58, 1) (RULEBOOK rule 19).
+#[allow(dead_code)] // S5/S6 modal_frame fade
+pub fn css_ease_out() -> Easing {
+    Easing::EaseOut
+}
+
+/// Unclamped cubic-bezier(0.32, 1.25, 0.32, 1). May exceed [0, 1] (rule 18).
+pub fn spring(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    // Same polynomial solve as Kit's cubic_bezier, without clamping y.
+    let (x1, y1, x2, y2) = (0.32_f32, 1.25, 0.32, 1.0);
+    let (cx, cy) = (3.0 * x1, 3.0 * y1);
+    let (bx, by) = (3.0 * (x2 - x1) - cx, 3.0 * (y2 - y1) - cy);
+    let (ax, ay) = (1.0 - cx - bx, 1.0 - cy - by);
+    let sample_x = |s: f32| ((ax * s + bx) * s + cx) * s;
+    let sample_y = |s: f32| ((ay * s + by) * s + cy) * s;
+    let slope_x = |s: f32| (3.0 * ax * s + 2.0 * bx) * s + cx;
+    let mut s = t;
+    for _ in 0..8 {
+        let error = sample_x(s) - t;
+        if error.abs() < 1e-6 {
+            return sample_y(s);
+        }
+        let slope = slope_x(s);
+        if slope.abs() < 1e-6 {
+            break;
+        }
+        s = (s - error / slope).clamp(0.0, 1.0);
+    }
+    let (mut low, mut high) = (0.0, 1.0);
+    s = t;
+    for _ in 0..32 {
+        let x = sample_x(s);
+        if (x - t).abs() < 1e-6 {
+            break;
+        }
+        if x < t {
+            low = s;
+        } else {
+            high = s;
+        }
+        s = (low + high) / 2.0;
+    }
+    sample_y(s)
 }
 
 pub fn transition_fast() -> Transition {
@@ -146,12 +198,15 @@ pub fn transition_smooth() -> Transition {
     Transition::new(SMOOTH).easing(ease_out())
 }
 
+/// Linear time; callers map progress through [`spring`] when interpolating (rule 18).
 pub fn transition_spring() -> Transition {
-    Transition::new(SMOOTH).easing(spring())
+    Transition::new(SMOOTH).easing(Easing::Custom(Rc::new(spring)))
 }
 
+/// Modal fadeIn: 150 ms CSS keyword ease-out (rule 19).
+#[allow(dead_code)] // S5/S6 modal_frame
 pub fn transition_modal_fade() -> Transition {
-    Transition::new(MODAL_FADE).easing(ease_out())
+    Transition::new(MODAL_FADE).easing(css_ease_out())
 }
 
 /// Motion policy that finishes at once when parity freezes animations.
@@ -191,18 +246,21 @@ pub fn focus_visible_shadows(local_bg: Hsla) -> Vec<BoxShadow> {
 
 // One-off colors (CSS line in comment at use site).
 /// rgba(124,45,255,.14) — active row bg
+#[allow(dead_code)] // S2 active row
 pub fn active_row_bg() -> Hsla {
     let mut c: Hsla = rgb(0x7c2dff).into();
     c.a = 0.14;
     c
 }
 /// rgba(124,45,255,.10) — transfer toast bg
+#[allow(dead_code)] // S4 transfer toast
 pub fn transfer_toast_bg() -> Hsla {
     let mut c: Hsla = rgb(0x7c2dff).into();
     c.a = 0.10;
     c
 }
 /// rgba(124,45,255,.20) — transfer toast border
+#[allow(dead_code)] // S4 transfer toast
 pub fn transfer_toast_border() -> Hsla {
     let mut c: Hsla = rgb(0x7c2dff).into();
     c.a = 0.20;
@@ -215,32 +273,38 @@ pub fn update_pill_bg() -> Hsla {
     c
 }
 /// rgba(34,197,94,.12) — hook active bg
+#[allow(dead_code)] // S5 hook badge
 pub fn hook_active_bg() -> Hsla {
     let mut c: Hsla = rgb(0x22c55e).into();
     c.a = 0.12;
     c
 }
 /// #4ade80 — hook active ink
+#[allow(dead_code)] // S5 hook badge
 pub fn hook_active_ink() -> Hsla {
     rgb(0x4ade80).into()
 }
 /// rgba(239,68,68,.12) — hook inactive bg
+#[allow(dead_code)] // S5 hook badge
 pub fn hook_inactive_bg() -> Hsla {
     let mut c: Hsla = rgb(0xef4444).into();
     c.a = 0.12;
     c
 }
 /// #f87171 — hook inactive ink
+#[allow(dead_code)] // S5 hook badge
 pub fn hook_inactive_ink() -> Hsla {
     rgb(0xf87171).into()
 }
 /// rgba(0,0,0,.75) — modal backdrop
+#[allow(dead_code)] // S5/S6 modal_frame
 pub fn modal_backdrop() -> Hsla {
     let mut c: Hsla = rgb(0x000000).into();
     c.a = 0.75;
     c
 }
 /// rgba(0,0,0,.9) — modal shadow
+#[allow(dead_code)] // S5/S6 modal_frame
 pub fn modal_shadow() -> Hsla {
     let mut c: Hsla = rgb(0x000000).into();
     c.a = 0.9;
@@ -253,12 +317,14 @@ pub fn status_dot_glow() -> Hsla {
     c
 }
 /// rgb(0 0 0 / .4) — knob shadow
+#[allow(dead_code)] // S5 switch knob
 pub fn knob_shadow() -> Hsla {
     let mut c: Hsla = rgb(0x000000).into();
     c.a = 0.4;
     c
 }
 /// rgb(0 0 0 / .5) — slider thumb shadow
+#[allow(dead_code)] // slider thumb
 pub fn slider_thumb_shadow() -> Hsla {
     let mut c: Hsla = rgb(0x000000).into();
     c.a = 0.5;

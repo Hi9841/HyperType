@@ -2,9 +2,8 @@
 //! names the CSS lines.
 
 #![allow(clippy::too_many_arguments)]
-// S2+ consumes these; S1 ships the shared API only.
-#![allow(dead_code)]
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui_kit::base::{transition, Presence};
@@ -20,6 +19,7 @@ use crate::ui::icons;
 use crate::ui::tokens;
 
 /// `.trigger-keycap` — styles.css:413-422
+#[allow(dead_code)] // S2/S4 trigger badge
 pub fn keycap(label: impl Into<SharedString>) -> Div {
     div()
         .font_family(tokens::FONT_MONO)
@@ -36,6 +36,7 @@ pub fn keycap(label: impl Into<SharedString>) -> Div {
 }
 
 /// `.chord-key` — styles.css:428-437
+#[allow(dead_code)] // S2/S4 chord badge
 pub fn chord_key(label: impl Into<SharedString>) -> Div {
     div()
         .font_family(tokens::FONT_MONO)
@@ -52,6 +53,7 @@ pub fn chord_key(label: impl Into<SharedString>) -> Div {
 }
 
 /// `.chord-badge` — styles.css:424-427; uses `chord::keys`
+#[allow(dead_code)] // S2/S4 chord badge
 pub fn chord_badge(trigger: &str) -> Div {
     h_flex()
         .gap(px(3.))
@@ -59,6 +61,7 @@ pub fn chord_badge(trigger: &str) -> Div {
 }
 
 /// Text trigger as one keycap, shortcut as a chord badge.
+#[allow(dead_code)] // S2/S4 row badge
 pub fn trigger_badge(trigger: &str, kind: TriggerKind) -> Div {
     match kind {
         TriggerKind::Text => h_flex().min_w_0().child(keycap(trigger.to_string()).truncate()),
@@ -67,6 +70,7 @@ pub fn trigger_badge(trigger: &str, kind: TriggerKind) -> Div {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // S4/S5 segmented
 pub enum SegKind {
     Two,
     Three,
@@ -74,6 +78,7 @@ pub enum SegKind {
 
 /// `.seg` / `.seg-kind` / `.seg-3` / `.seg-combo` — styles.css:601-657
 /// Animated thumb uses SMOOTH + SPRING. `freeze` forces t=0 (parity).
+#[allow(dead_code)] // S4/S5 segmented
 pub fn segmented<T: Copy + PartialEq + 'static>(
     id: impl Into<ElementId>,
     options: &[(T, &str)],
@@ -97,6 +102,7 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
         .position(|(v, _)| *v == current)
         .unwrap_or(0);
     let target_x = thumb_w * selected as f32;
+    // Linear time + tokens::spring(t) via transition_spring (rule 18).
     let policy = tokens::motion(tokens::transition_spring(), freeze);
     // Stable channel per control (RULEBOOK rule 12).
     let x = transition((id.clone(), "thumb"), target_x, policy, window, cx);
@@ -154,6 +160,7 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
 
 /// `.switch` / `.knob` — styles.css:884-912.
 /// Track bg/border: SMOOTH + EASE_OUT. Knob: SMOOTH + SPRING.
+#[allow(dead_code)] // S5 settings switch
 pub fn switch(
     id: impl Into<ElementId>,
     checked: bool,
@@ -164,6 +171,7 @@ pub fn switch(
 ) -> impl IntoElement {
     let id: ElementId = id.into();
     let target = if checked { px(16.) } else { px(0.) };
+    // Linear time + tokens::spring(t) via transition_spring (rule 18).
     let knob_policy = tokens::motion(tokens::transition_spring(), freeze);
     let track_policy = tokens::motion(tokens::transition_smooth(), freeze);
     let x = transition((id.clone(), "knob"), target, knob_policy, window, cx);
@@ -222,19 +230,38 @@ pub fn switch(
 }
 
 #[derive(Clone, Copy, Default)]
+#[allow(dead_code)] // slider drag state
 struct SliderDrag {
     active: bool,
     origin_x: Pixels,
     width: Pixels,
+    last: f32,
+}
+
+#[allow(dead_code)] // slider step snap
+fn snap_slider(value: f32, min: f32, max: f32, step: f32) -> f32 {
+    let clamped = value.clamp(min, max);
+    if step <= 0. {
+        return clamped;
+    }
+    let n = ((clamped - min) / step).round();
+    (min + n * step).clamp(min, max)
 }
 
 /// `.slider` — styles.css:914-932. 130×4 track; 14px thumb paints over, centered.
-/// Drag keyed by slider id; click jumps; move/release tracked outside (rule 14).
+/// Click jumps to pointer (track left origin); drag captures the pointer so
+/// moves/release outside the 4px box keep updating (rules 14 + F1).
+///
+/// Drag flags live in an `Rc<Cell<_>>` keyed by slider id. Updating an
+/// `Entity<SliderDrag>` would notify the parent view mid-gesture and replace
+/// mouse listeners before mouse-up, dropping the click `change`/`commit`.
+#[allow(dead_code)] // S5 settings + parity widget-lab
 pub fn slider(
     id: impl Into<ElementId>,
     value: f32,
     min: f32,
     max: f32,
+    step: f32,
     on_live: impl Fn(f32, &mut Window, &mut App) + 'static,
     on_commit: impl Fn(f32, &mut Window, &mut App) + 'static,
     window: &mut Window,
@@ -248,14 +275,20 @@ pub fn slider(
     let track_h = px(4.);
     let x = (track_w - thumb) * t;
 
-    let drag = window.use_keyed_state((id.clone(), "drag"), cx, |_, _| SliderDrag::default());
+    // Keyed Rc<Cell>: same cell across frames; never entity.update mid-gesture.
+    let drag = window
+        .use_keyed_state((id.clone(), "drag"), cx, |_, _| {
+            Rc::new(Cell::new(SliderDrag::default()))
+        })
+        .read(cx)
+        .clone();
     let on_live = Rc::new(on_live);
     let on_commit = Rc::new(on_commit);
 
-    // Jump like `<input type=range>`: map pointer x across the full track.
     let sample = move |pos_x: Pixels, origin_x: Pixels, width: Pixels| -> f32 {
+        let width = width.max(px(1.));
         let t = ((pos_x - origin_x) / width).clamp(0., 1.);
-        min + t * (max - min)
+        snap_slider(min + t * (max - min), min, max, step)
     };
 
     div()
@@ -289,68 +322,103 @@ pub fn slider(
                     inset: false,
                 }]),
         )
-        .on_mouse_down(MouseButton::Left, {
-            let on_live = on_live.clone();
-            let drag = drag.clone();
-            move |ev, window, cx| {
-                // Origin ≈ click minus current normalized offset; refined by width.
-                let origin_x = ev.position.x - track_w * t;
-                drag.update(cx, |d, _| {
-                    d.active = true;
-                    d.origin_x = origin_x;
-                    d.width = track_w;
-                });
-                let d = *drag.read(cx);
-                let v = sample(ev.position.x, d.origin_x, d.width);
-                on_live(v, window, cx);
-                window.prevent_default();
-                cx.stop_propagation();
-            }
-        })
-        .on_mouse_move({
-            let on_live = on_live.clone();
-            let drag = drag.clone();
-            move |ev, window, cx| {
-                if !drag.read(cx).active {
-                    return;
-                }
-                let d = *drag.read(cx);
-                let v = sample(ev.position.x, d.origin_x, d.width);
-                on_live(v, window, cx);
-            }
-        })
-        .on_mouse_up(MouseButton::Left, {
-            let on_commit = on_commit.clone();
-            let drag = drag.clone();
-            move |ev, window, cx| {
-                if !drag.read(cx).active {
-                    return;
-                }
-                let d = *drag.read(cx);
-                drag.update(cx, |d, _| d.active = false);
-                let v = sample(ev.position.x, d.origin_x, d.width);
-                on_commit(v, window, cx);
-            }
-        })
-        .on_mouse_up_out(MouseButton::Left, {
-            let on_commit = on_commit.clone();
-            let drag = drag.clone();
-            move |ev, window, cx| {
-                if !drag.read(cx).active {
-                    return;
-                }
-                let d = *drag.read(cx);
-                drag.update(cx, |d, _| d.active = false);
-                let v = sample(ev.position.x, d.origin_x, d.width);
-                on_commit(v, window, cx);
-            }
-        })
+        // Hit area covers the 14px thumb (shifted top -5) while layout stays 130×4.
+        .child(
+            canvas(
+                |bounds, window, _| {
+                    let hit_bounds = Bounds {
+                        origin: point(bounds.origin.x, bounds.origin.y - px(5.)),
+                        size: size(bounds.size.width, px(14.)),
+                    };
+                    (bounds, window.insert_hitbox(hit_bounds, HitboxBehavior::Normal))
+                },
+                move |_bounds, (track_bounds, hitbox), window, _cx| {
+                    let on_live = on_live.clone();
+                    let on_commit = on_commit.clone();
+                    let drag = drag.clone();
+                    let hitbox = hitbox.clone();
+
+                    window.on_mouse_event({
+                        let on_live = on_live.clone();
+                        let drag = drag.clone();
+                        let hitbox = hitbox.clone();
+                        move |ev: &MouseDownEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble
+                                || ev.button != MouseButton::Left
+                                || !hitbox.is_hovered(window)
+                            {
+                                return;
+                            }
+                            window.capture_pointer(hitbox.id);
+                            let origin_x = track_bounds.origin.x;
+                            let width = track_bounds.size.width;
+                            let v = sample(ev.position.x, origin_x, width);
+                            drag.set(SliderDrag {
+                                active: true,
+                                origin_x,
+                                width,
+                                last: v,
+                            });
+                            on_live(v, window, cx);
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        }
+                    });
+
+                    window.on_mouse_event({
+                        let on_live = on_live.clone();
+                        let drag = drag.clone();
+                        let hitbox = hitbox.clone();
+                        move |ev: &MouseMoveEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) {
+                                return;
+                            }
+                            let d = drag.get();
+                            if !d.active {
+                                return;
+                            }
+                            let v = sample(ev.position.x, d.origin_x, d.width);
+                            drag.set(SliderDrag {
+                                last: v,
+                                ..d
+                            });
+                            on_live(v, window, cx);
+                        }
+                    });
+
+                    window.on_mouse_event({
+                        let on_commit = on_commit.clone();
+                        let drag = drag.clone();
+                        move |ev: &MouseUpEvent, phase, window, cx| {
+                            if phase != DispatchPhase::Bubble || ev.button != MouseButton::Left {
+                                return;
+                            }
+                            let d = drag.get();
+                            if !d.active {
+                                return;
+                            }
+                            let v = sample(ev.position.x, d.origin_x, d.width);
+                            drag.set(SliderDrag {
+                                active: false,
+                                last: v,
+                                ..d
+                            });
+                            // capture_pointer auto-releases on mouse up.
+                            on_commit(v, window, cx);
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
 }
 
 /// Wire a value-edit input: select-all on focus, Enter blurs, blur commits
 /// clamped value, empty/NaN reverts. App.tsx:358-373.
 ///
 /// Call from the owning entity's `new` with `cx.subscribe_in`.
+#[allow(dead_code)] // S5 settings + parity widget-lab
 pub fn on_value_edit_event(
     input: &Entity<InputState>,
     event: &InputEvent,
@@ -404,6 +472,7 @@ pub fn on_value_edit_event(
 }
 
 /// Advance of mono `"0"` at 12px (Cascadia Code / fallbacks).
+#[allow(dead_code)] // value_edit width
 fn mono_zero_advance(window: &Window) -> Pixels {
     let text_system = window.text_system();
     let font = Font {
@@ -435,6 +504,8 @@ fn mono_zero_advance(window: &Window) -> Pixels {
 }
 
 /// `.value-edit` — styles.css:934-945. Kit Input with appearance(false).
+/// Rule 17: set px/py/height explicitly so Kit Medium (10/8, h_8) does not remain.
+#[allow(dead_code)] // S5 settings + parity widget-lab
 pub fn value_edit(
     input: &Entity<InputState>,
     wide: bool,
@@ -442,6 +513,8 @@ pub fn value_edit(
 ) -> impl IntoElement {
     let ch = mono_zero_advance(window);
     let width = if wide { ch * 4.5 } else { ch * 4.0 };
+    // font 12px / line-height 1.4 → content height 16.8; CSS padding: 0.
+    let height = px(16.8);
     div()
         .w(width)
         .child(
@@ -455,11 +528,19 @@ pub fn value_edit(
                 .text_color(tokens::ink())
                 .border_b_1()
                 .border_dashed()
-                .border_color(tokens::line_2()),
+                .border_color(tokens::line_2())
+                .px(px(0.))
+                .py(px(0.))
+                .map(|mut this| {
+                    // Input::h sets multi-line height; refine the single-line box (rule 17).
+                    this.style().size.height = Some(height.into());
+                    this
+                }),
         )
 }
 
 /// `.studio-field` — styles.css:554-568. Focus ring = 3px RING_SOFT.
+#[allow(dead_code)] // S4 editor fields
 pub fn field_frame(focused: bool, child: impl IntoElement) -> impl IntoElement {
     div()
         .h(px(34.))
@@ -489,6 +570,7 @@ pub fn field_frame(focused: bool, child: impl IntoElement) -> impl IntoElement {
 }
 
 /// `.hook-status-badge` / `.hook-active` / `.hook-inactive` — styles.css:1161-1178
+#[allow(dead_code)] // S5 hook status
 pub fn hook_badge(active: bool, label: impl Into<SharedString>) -> impl IntoElement {
     let (bg, ink) = if active {
         (tokens::hook_active_bg(), tokens::hook_active_ink())
@@ -511,6 +593,7 @@ pub fn hook_badge(active: bool, label: impl Into<SharedString>) -> impl IntoElem
 
 /// Modal backdrop + card + header. styles.css:799-849.
 /// Fade in 150 ms from 0→1 on open (RULEBOOK rule 12). Backdrop click and Escape close.
+#[allow(dead_code)] // S5/S6 modals
 pub fn modal_frame(
     id: impl Into<ElementId>,
     title: impl Into<SharedString>,
@@ -605,6 +688,7 @@ pub fn modal_frame(
 }
 
 /// Shared button: accent fill (`.btn-save-snippet` base) — styles.css:772-793
+#[allow(dead_code)] // S4 save button
 pub fn btn_accent(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -631,6 +715,7 @@ pub fn btn_accent(
 }
 
 /// Shared button: danger outline (`.btn-delete-active`) — styles.css:756-770
+#[allow(dead_code)] // S4 delete button
 pub fn btn_danger_outline(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -654,6 +739,7 @@ pub fn btn_danger_outline(
 }
 
 /// `.btn-repair-hook` — styles.css:1193-1217. Quiet surface control.
+#[allow(dead_code)] // S5 repair hook
 pub fn btn_surface(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -685,13 +771,30 @@ pub fn btn_surface(
         .child(label.into())
 }
 
-/// `.btn-check-updates` — styles.css:1104-1126.
+/// `.btn-check-updates` — styles.css:1104-1126. IconRefresh before label (gap 5).
+/// Spins while checking (SPIN 1s linear infinite); frozen at t=0 in parity mode.
+#[allow(dead_code)] // S5 settings + parity widget-lab
 pub fn btn_check_updates(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     enabled: bool,
+    spinning: bool,
+    freeze: bool,
     on_click: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
+    let icon = if spinning && !freeze {
+        icons::refresh()
+            .with_animation(
+                "btn-check-updates-spin",
+                Animation::new(tokens::SPIN).repeat(),
+                |icon, delta| icon.rotate(percentage(delta)),
+            )
+            .into_any_element()
+    } else {
+        // freeze or idle: IconRefresh at t=0 (no rotation).
+        icons::refresh().into_any_element()
+    };
+
     h_flex()
         .id(id)
         .items_center()
@@ -715,10 +818,12 @@ pub fn btn_check_updates(
                 .on_click(move |_, window, cx| on_click(window, cx))
         })
         .when(!enabled, |this| this.opacity(0.6).cursor(CursorStyle::Arrow))
+        .child(icon)
         .child(label.into())
 }
 
-/// `.btn-create-first` — styles.css:490-502.
+/// `.btn-create-first` — styles.css:490-502. IconPlus before label (gap 6).
+#[allow(dead_code)] // S2 empty library + parity widget-lab
 pub fn btn_create_first(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -739,5 +844,6 @@ pub fn btn_create_first(
         .rounded(px(6.))
         .cursor(CursorStyle::PointingHand)
         .on_click(move |_, window, cx| on_click(window, cx))
+        .child(icons::plus())
         .child(label.into())
 }

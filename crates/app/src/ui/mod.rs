@@ -11,6 +11,8 @@ mod tokens;
 mod tokens_modal;
 mod update;
 mod widgets;
+#[cfg(feature = "parity")]
+pub mod widget_lab;
 
 #[allow(unused_imports)]
 pub use studio::{Modal, Studio};

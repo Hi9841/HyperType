@@ -53,6 +53,20 @@ pub fn apply(
             }
             return true;
         }
+        // S1 F1/F2 proof surface: slider + value_edit.
+        if name == "widget-lab" {
+            #[cfg(feature = "parity")]
+            {
+                let lab = cx.new(|cx| crate::ui::widget_lab::WidgetLab::new(window, cx));
+                studio.widget_lab = Some(lab);
+                cx.notify();
+                return true;
+            }
+            #[cfg(not(feature = "parity"))]
+            {
+                return false;
+            }
+        }
         false
     })
 }

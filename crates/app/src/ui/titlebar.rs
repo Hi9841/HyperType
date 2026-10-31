@@ -172,23 +172,39 @@ fn status_dot(
     glow.a = glow_alpha;
 
     // .brand-status-dot — styles.css:117-131
+    // Rule 20: two stacked filled circles (border as outer fill) so the GPU
+    // border fast path cannot turn a 6px ring into a plus.
     div()
         .absolute()
         .bottom(px(-2.))
         .right(px(-2.))
         .w(px(6.))
         .h(px(6.))
-        .rounded_full()
-        .border_1()
-        .border_color(tokens::surface_1())
-        .bg(bg)
-        .shadow(vec![BoxShadow {
-            color: glow,
-            offset: point(px(0.), px(0.)),
-            blur_radius: tokens::css_blur(6.),
-            spread_radius: px(0.),
-            inset: false,
-        }])
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .absolute()
+                .inset_0()
+                .rounded_full()
+                .bg(tokens::surface_1())
+                .shadow(vec![BoxShadow {
+                    color: glow,
+                    offset: point(px(0.), px(0.)),
+                    blur_radius: tokens::css_blur(6.),
+                    spread_radius: px(0.),
+                    inset: false,
+                }]),
+        )
+        .child(
+            div()
+                .relative()
+                .w(px(4.))
+                .h(px(4.))
+                .rounded_full()
+                .bg(bg),
+        )
 }
 
 fn studio_pill() -> impl IntoElement {

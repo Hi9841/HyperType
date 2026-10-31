@@ -41,6 +41,9 @@ pub struct Studio {
     pub tokens: Entity<TokensModal>,
     /// Parity: freeze infinite animations at t=0.
     pub freeze_animations: bool,
+    /// Parity-only overlay for slider / value_edit proof (`widget-lab`).
+    #[cfg(feature = "parity")]
+    pub widget_lab: Option<Entity<crate::ui::widget_lab::WidgetLab>>,
     did_initial_select: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -89,6 +92,8 @@ impl Studio {
             settings,
             tokens,
             freeze_animations,
+            #[cfg(feature = "parity")]
+            widget_lab: None,
             did_initial_select: false,
             _subscriptions,
         };
@@ -326,6 +331,21 @@ impl Render for Studio {
             })
             .when(self.modal == Some(Modal::Tokens), |this| {
                 this.child(self.tokens.clone())
+            })
+            .map(|this| {
+                #[cfg(feature = "parity")]
+                {
+                    if let Some(lab) = self.widget_lab.clone() {
+                        return this.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .bg(tokens::bg())
+                                .child(lab),
+                        );
+                    }
+                }
+                this
             })
     }
 }

@@ -3,14 +3,12 @@
 //! `global-hotkey` parser reads it. `Super` is the Windows key; the UI shows
 //! it as `Win`.
 
-// S4 shortcut recorder wires these; S1 only defines the helpers.
-#![allow(dead_code)]
-
 use gpui_kit::Keystroke;
 use windows::Win32::UI::Input::KeyboardAndMouse::VkKeyScanW;
 
 /// The chord for a key press, or `None` for a press without Ctrl, Alt,
 /// Shift, or Win, and for keys that a hotkey cannot use.
+#[allow(dead_code)] // S4 shortcut recorder
 pub fn from_keystroke(keystroke: &Keystroke) -> Option<String> {
     let mut shift = keystroke.modifiers.shift;
     let code = match named_code(&keystroke.key) {
@@ -62,6 +60,7 @@ pub fn keys(chord: &str) -> Vec<String> {
         .collect()
 }
 
+#[allow(dead_code)] // S4 shortcut display
 pub fn display(chord: &str) -> String {
     keys(chord).join("+")
 }

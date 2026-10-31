@@ -111,6 +111,30 @@ pub fn logo_18() -> Arc<Image> {
     .clone()
 }
 
+/// Pre-scaled 23×23 brand mark (1.25x, 22.5 rounded). Area (BOX) filter.
+pub fn logo_23() -> Arc<Image> {
+    static LOGO: OnceLock<Arc<Image>> = OnceLock::new();
+    LOGO.get_or_init(|| {
+        Arc::new(Image::from_bytes(
+            ImageFormat::Png,
+            include_bytes!("../assets/logo-23.png").to_vec(),
+        ))
+    })
+    .clone()
+}
+
+/// Pre-scaled 27×27 brand mark (1.5x). Area (BOX) filter from the 128px source.
+pub fn logo_27() -> Arc<Image> {
+    static LOGO: OnceLock<Arc<Image>> = OnceLock::new();
+    LOGO.get_or_init(|| {
+        Arc::new(Image::from_bytes(
+            ImageFormat::Png,
+            include_bytes!("../assets/logo-27.png").to_vec(),
+        ))
+    })
+    .clone()
+}
+
 /// Pre-scaled 36×36 brand mark (2x). Area (BOX) filter from the 128px source.
 pub fn logo_36() -> Arc<Image> {
     static LOGO: OnceLock<Arc<Image>> = OnceLock::new();
@@ -124,10 +148,23 @@ pub fn logo_36() -> Arc<Image> {
 }
 
 /// Brand mark at 1:1 device pixels for the window scale factor (RULEBOOK rule 15).
+/// Picks the closest of 18 / 23 / 27 / 36.
 pub fn logo_mark(scale_factor: f32) -> Arc<Image> {
-    if scale_factor >= 1.5 {
-        logo_36()
-    } else {
-        logo_18()
+    let target = 18.0 * scale_factor;
+    let sizes = [18.0_f32, 23.0, 27.0, 36.0];
+    let mut best = 0usize;
+    let mut best_dist = (sizes[0] - target).abs();
+    for (i, &s) in sizes.iter().enumerate().skip(1) {
+        let d = (s - target).abs();
+        if d < best_dist {
+            best = i;
+            best_dist = d;
+        }
+    }
+    match best {
+        0 => logo_18(),
+        1 => logo_23(),
+        2 => logo_27(),
+        _ => logo_36(),
     }
 }
