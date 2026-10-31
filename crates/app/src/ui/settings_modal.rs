@@ -5,6 +5,7 @@ use gpui_kit::*;
 use crate::ui::studio::Studio;
 
 pub struct SettingsModal {
+    #[allow(dead_code)] // S5 reads Studio through this handle
     studio: WeakEntity<Studio>,
     _observe: Subscription,
 }
@@ -19,6 +20,7 @@ impl SettingsModal {
     }
 
     /// S5 adds parity arms here.
+    #[allow(dead_code)] // S5 parity arms
     pub fn parity_state(
         &mut self,
         _name: &str,

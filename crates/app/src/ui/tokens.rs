@@ -1,5 +1,8 @@
 //! Design tokens from `src/styles.css:4-36`. Views use only these names.
 
+// Later slices use the full token set; S1 only paints the shell.
+#![allow(dead_code)]
+
 use std::time::Duration;
 
 use gpui_kit::base::{Easing, Transition};
@@ -158,6 +161,12 @@ pub fn motion(policy: Transition, freeze: bool) -> Transition {
     } else {
         policy
     }
+}
+
+/// CSS `box-shadow` blur radius → GPUI Gaussian sigma (RULEBOOK rule 11).
+/// Chromium: `sigma = 0.57735 * r + 0.5`.
+pub fn css_blur(r: f32) -> Pixels {
+    px(0.57735 * r + 0.5)
 }
 
 /// Global `:focus-visible` two-shadow ring (D10). `local_bg` fills the gap.

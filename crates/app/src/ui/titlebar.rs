@@ -1,8 +1,8 @@
 //! Frameless title bar. App.tsx:618-661, styles.css:81-199.
 
+use gpui_kit::base::transition;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::assets;
@@ -11,16 +11,18 @@ use crate::ui::studio::{Modal, Studio};
 use crate::ui::tokens;
 use crate::ui::update::UpdateInfo;
 
-/// Title bar row. Drag area except interactive buttons.
+/// Title bar row. Whole row is a drag area; interactive controls `.occlude()`.
 pub fn render(
     studio: &Studio,
-    _window: &mut Window,
+    window: &mut Window,
     cx: &mut Context<Studio>,
 ) -> impl IntoElement {
     let enabled = studio.status.enabled;
     let update_info = studio.update.info.clone();
+    let freeze = studio.freeze_animations;
 
     // .studio-titlebar — styles.css:82-92
+    // Whole row is drag (App.tsx:619); interactive children `.occlude()`.
     h_flex()
         .id("studio-titlebar")
         .flex_none()
@@ -32,25 +34,23 @@ pub fn render(
         .items_center()
         .justify_between()
         .px(px(16.))
-        .child(brand(enabled, cx))
-        // Flexible drag region between brand and window controls.
-        .child(
-            div()
-                .id("titlebar-drag")
-                .flex_1()
-                .h_full()
-                .window_control_area(WindowControlArea::Drag),
-        )
+        .window_control_area(WindowControlArea::Drag)
+        .child(brand(enabled, freeze, window, cx))
         .child(win_controls(update_info, cx))
 }
 
-fn brand(enabled: bool, cx: &mut Context<Studio>) -> impl IntoElement {
+fn brand(
+    enabled: bool,
+    freeze: bool,
+    window: &mut Window,
+    cx: &mut Context<Studio>,
+) -> impl IntoElement {
     // .studio-brand — styles.css:94-98
     h_flex()
         .id("studio-brand")
         .items_center()
         .gap(px(10.))
-        .child(brand_icon(enabled, cx))
+        .child(brand_icon(enabled, freeze, window, cx))
         .child(
             // .brand-name — styles.css:133-140 (letter-spacing omitted D2)
             h_flex()
@@ -60,22 +60,50 @@ fn brand(enabled: bool, cx: &mut Context<Studio>) -> impl IntoElement {
                 .text_size(px(13.))
                 .font_weight(FontWeight::BOLD)
                 .text_color(tokens::ink())
-                .window_control_area(WindowControlArea::Drag)
                 .child("HyperType")
                 .child(studio_pill()),
         )
 }
 
-fn brand_icon(enabled: bool, cx: &mut Context<Studio>) -> impl IntoElement {
+fn brand_icon(
+    enabled: bool,
+    freeze: bool,
+    window: &mut Window,
+    cx: &mut Context<Studio>,
+) -> impl IntoElement {
     let tip = if enabled {
         "Engine Active (click to pause)"
     } else {
         "Engine Paused (click to resume)"
     };
+    let scale = window.scale_factor();
+    let policy = tokens::motion(tokens::transition_smooth(), freeze);
+    // Opacity / grayscale crossfade — styles.css:110
+    let color_opacity = transition(
+        ("brand-mark", "color-opacity"),
+        if enabled { 1.0_f32 } else { 0.0 },
+        policy.clone(),
+        window,
+        cx,
+    );
+    let gray_opacity = transition(
+        ("brand-mark", "gray-opacity"),
+        if enabled {
+            0.0_f32
+        } else {
+            tokens::BRAND_PAUSED_OPACITY
+        },
+        policy,
+        window,
+        cx,
+    );
+
     // .brand-icon-wrap — styles.css:100-106; sized to the 18×18 mark for absolute dot.
+    // Rule 16: odd vertical remainder above — shift mark/dot 1px down via relative top.
     div()
         .id("brand-icon-wrap")
         .relative()
+        .top(px(1.))
         .flex()
         .items_center()
         .justify_center()
@@ -83,27 +111,66 @@ fn brand_icon(enabled: bool, cx: &mut Context<Studio>) -> impl IntoElement {
         .h(px(18.))
         .flex_shrink_0()
         .cursor(CursorStyle::PointingHand)
+        .occlude()
         .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
         .on_click(cx.listener(|this, _, _, cx| {
             this.toggle_enabled(cx);
         }))
         .child(
-            // .brand-mark — styles.css:108-115; 18×18 logo
-            img(assets::logo())
+            // .brand-mark — styles.css:108-115; 1:1 pre-scaled asset (rule 15)
+            div()
+                .relative()
                 .w(px(18.))
                 .h(px(18.))
-                .object_fit(ObjectFit::Contain)
-                .grayscale(!enabled)
-                .opacity(if enabled {
-                    1.0
-                } else {
-                    tokens::BRAND_PAUSED_OPACITY
-                }),
+                .child(
+                    img(assets::logo_mark(scale))
+                        .w(px(18.))
+                        .h(px(18.))
+                        .object_fit(ObjectFit::Fill)
+                        .opacity(color_opacity),
+                )
+                .child(
+                    img(assets::logo_mark(scale))
+                        .absolute()
+                        .inset_0()
+                        .w(px(18.))
+                        .h(px(18.))
+                        .object_fit(ObjectFit::Fill)
+                        .grayscale(true)
+                        .opacity(gray_opacity),
+                ),
         )
-        .child(status_dot(enabled))
+        .child(status_dot(enabled, freeze, window, cx))
 }
 
-fn status_dot(enabled: bool) -> impl IntoElement {
+fn status_dot(
+    enabled: bool,
+    freeze: bool,
+    window: &mut Window,
+    cx: &mut Context<Studio>,
+) -> impl IntoElement {
+    let policy = tokens::motion(tokens::transition_fast(), freeze);
+    let bg = transition(
+        ("status-dot", "bg"),
+        if enabled {
+            tokens::success()
+        } else {
+            tokens::ink_3()
+        },
+        policy.clone(),
+        window,
+        cx,
+    );
+    let glow_alpha = transition(
+        ("status-dot", "glow"),
+        if enabled { 0.8_f32 } else { 0.0 },
+        policy,
+        window,
+        cx,
+    );
+    let mut glow = tokens::status_dot_glow();
+    glow.a = glow_alpha;
+
     // .brand-status-dot — styles.css:117-131
     div()
         .absolute()
@@ -114,16 +181,14 @@ fn status_dot(enabled: bool) -> impl IntoElement {
         .rounded_full()
         .border_1()
         .border_color(tokens::surface_1())
-        .when(enabled, |this| {
-            this.bg(tokens::success()).shadow(vec![BoxShadow {
-                color: tokens::status_dot_glow(),
-                offset: point(px(0.), px(0.)),
-                blur_radius: px(6.),
-                spread_radius: px(0.),
-                inset: false,
-            }])
-        })
-        .when(!enabled, |this| this.bg(tokens::ink_3()))
+        .bg(bg)
+        .shadow(vec![BoxShadow {
+            color: glow,
+            offset: point(px(0.), px(0.)),
+            blur_radius: tokens::css_blur(6.),
+            spread_radius: px(0.),
+            inset: false,
+        }])
 }
 
 fn studio_pill() -> impl IntoElement {
@@ -179,6 +244,7 @@ fn update_pill(info: UpdateInfo, cx: &mut Context<Studio>) -> impl IntoElement {
         .rounded(px(6.))
         .cursor(CursorStyle::PointingHand)
         .mr(px(4.))
+        .occlude()
         .hover(|s| s.bg(tokens::accent()).text_color(tokens::white()))
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
         .on_click(cx.listener(|this, _, _, cx| {
@@ -190,6 +256,7 @@ fn update_pill(info: UpdateInfo, cx: &mut Context<Studio>) -> impl IntoElement {
 
 fn settings_btn(cx: &mut Context<Studio>) -> impl IntoElement {
     // .settings-icon-btn — styles.css:159-177
+    // Icon inherits parent text_color so hover ink reaches the SVG.
     div()
         .id("settings-icon-btn")
         .w(px(28.))
@@ -204,6 +271,7 @@ fn settings_btn(cx: &mut Context<Studio>) -> impl IntoElement {
         .justify_center()
         .cursor(CursorStyle::PointingHand)
         .mr(px(4.))
+        .occlude()
         .hover(|s| {
             s.bg(tokens::surface_3())
                 .text_color(tokens::ink())
@@ -218,7 +286,7 @@ fn settings_btn(cx: &mut Context<Studio>) -> impl IntoElement {
         .on_click(cx.listener(|this, _, _, cx| {
             this.set_modal(Some(Modal::Settings), cx);
         }))
-        .child(icons::settings().text_color(tokens::ink_2()))
+        .child(icons::settings())
 }
 
 fn winbtn_minimize() -> impl IntoElement {
@@ -233,15 +301,17 @@ fn winbtn_minimize() -> impl IntoElement {
         .items_center()
         .justify_center()
         .cursor(CursorStyle::PointingHand)
+        .occlude()
         .hover(|s| s.bg(tokens::surface_2()).text_color(tokens::ink()))
         .on_click(|_, window, _| {
             window.minimize_window();
         })
-        .child(icons::minimize().text_color(tokens::ink_2()))
+        .child(icons::minimize())
 }
 
 fn winbtn_close() -> impl IntoElement {
     // .winbtn.close — styles.css:179-199
+    // Hover: DANGER bg + white icon via inherited text_color.
     div()
         .id("winbtn-close")
         .w(px(28.))
@@ -252,14 +322,16 @@ fn winbtn_close() -> impl IntoElement {
         .items_center()
         .justify_center()
         .cursor(CursorStyle::PointingHand)
+        .occlude()
         .hover(|s| s.bg(tokens::danger()).text_color(tokens::white()))
         .on_click(|_, window, _| {
             window.remove_window();
         })
-        .child(icons::close_window().text_color(tokens::ink_2()))
+        .child(icons::close_window())
 }
 
 /// S7b may add update-available parity; S1 has no arms yet.
+#[allow(dead_code)] // Dispatched from ui/parity; no S1 arms
 pub fn parity_state(
     _studio: &mut Studio,
     _name: &str,

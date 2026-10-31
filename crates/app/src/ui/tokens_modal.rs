@@ -5,6 +5,7 @@ use gpui_kit::*;
 use crate::ui::studio::Studio;
 
 pub struct TokensModal {
+    #[allow(dead_code)] // S6 reads Studio through this handle
     studio: WeakEntity<Studio>,
     _observe: Subscription,
 }
@@ -19,6 +20,7 @@ impl TokensModal {
     }
 
     /// S6 adds parity arms here.
+    #[allow(dead_code)] // S6 parity arms
     pub fn parity_state(
         &mut self,
         _name: &str,

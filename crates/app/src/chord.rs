@@ -3,6 +3,9 @@
 //! `global-hotkey` parser reads it. `Super` is the Windows key; the UI shows
 //! it as `Win`.
 
+// S4 shortcut recorder wires these; S1 only defines the helpers.
+#![allow(dead_code)]
+
 use gpui_kit::Keystroke;
 use windows::Win32::UI::Input::KeyboardAndMouse::VkKeyScanW;
 

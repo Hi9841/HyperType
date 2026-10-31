@@ -1,7 +1,5 @@
 // Hide the console window in release; keep it in debug for logs.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-// S1 foundation exports widgets and Studio/Editor APIs for later slices.
-#![allow(dead_code)]
 
 mod assets;
 mod autostart;

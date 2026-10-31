@@ -2,10 +2,12 @@
 //! names the CSS lines.
 
 #![allow(clippy::too_many_arguments)]
+// S2+ consumes these; S1 ships the shared API only.
+#![allow(dead_code)]
 
 use std::rc::Rc;
 
-use gpui_kit::base::transition;
+use gpui_kit::base::{transition, Presence};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{h_flex, v_flex};
@@ -83,29 +85,25 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
     window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
-    let id = id.into();
+    let id: ElementId = id.into();
+    let n = match kind {
+        SegKind::Two => 2.0_f32,
+        SegKind::Three => 3.0,
+    };
+    // Thumb: (border-box − 2px border) / n − 2px; height 24 (30 − 2 border − 4 pad).
+    let thumb_w = (width - px(2.)) / n - px(2.);
     let selected = options
         .iter()
         .position(|(v, _)| *v == current)
         .unwrap_or(0);
-    let track_inner = width - px(4.);
-    let thumb_w = match kind {
-        SegKind::Two => track_inner / 2.,
-        SegKind::Three => track_inner / 3.,
-    };
     let target_x = thumb_w * selected as f32;
     let policy = tokens::motion(tokens::transition_spring(), freeze);
-    let x = transition(
-        SharedString::from(format!("seg-thumb-{selected}")),
-        target_x,
-        policy,
-        window,
-        cx,
-    );
+    // Stable channel per control (RULEBOOK rule 12).
+    let x = transition((id.clone(), "thumb"), target_x, policy, window, cx);
     let on_change = Rc::new(on_change);
 
     div()
-        .id(id)
+        .id(id.clone())
         .relative()
         .flex()
         .w(width)
@@ -121,7 +119,7 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
                 .top(px(2.))
                 .left(px(2.) + x)
                 .w(thumb_w)
-                .h(px(26.))
+                .h(px(24.))
                 .rounded(px(5.))
                 .bg(tokens::surface_3()),
         )
@@ -129,8 +127,9 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
             let active = *value == current;
             let value = *value;
             let on_change = on_change.clone();
+            // Option ids include the parent element id (finding 18).
             div()
-                .id(("seg-opt", ix))
+                .id((id.clone(), format!("opt-{ix}")))
                 .relative()
                 .flex_1()
                 .h_full()
@@ -146,7 +145,6 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
                 } else {
                     tokens::ink_2()
                 })
-                .hover(|s| s.text_color(tokens::white()))
                 .child((*label).to_string())
                 .on_click(move |_, window, cx| {
                     on_change(value, window, cx);
@@ -154,7 +152,8 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
         }))
 }
 
-/// `.switch` / `.knob` — styles.css:884-912. SMOOTH + SPRING on the knob.
+/// `.switch` / `.knob` — styles.css:884-912.
+/// Track bg/border: SMOOTH + EASE_OUT. Knob: SMOOTH + SPRING.
 pub fn switch(
     id: impl Into<ElementId>,
     checked: bool,
@@ -163,11 +162,33 @@ pub fn switch(
     window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
-    let id = id.into();
+    let id: ElementId = id.into();
     let target = if checked { px(16.) } else { px(0.) };
-    let policy = tokens::motion(tokens::transition_spring(), freeze);
-    let motion_id: SharedString = "switch-knob".into();
-    let x = transition(motion_id, target, policy, window, cx);
+    let knob_policy = tokens::motion(tokens::transition_spring(), freeze);
+    let track_policy = tokens::motion(tokens::transition_smooth(), freeze);
+    let x = transition((id.clone(), "knob"), target, knob_policy, window, cx);
+    let track_bg = transition(
+        (id.clone(), "track-bg"),
+        if checked {
+            tokens::accent()
+        } else {
+            tokens::control()
+        },
+        track_policy.clone(),
+        window,
+        cx,
+    );
+    let track_border = transition(
+        (id.clone(), "track-border"),
+        if checked {
+            tokens::accent()
+        } else {
+            tokens::control_line()
+        },
+        track_policy,
+        window,
+        cx,
+    );
 
     div()
         .id(id)
@@ -177,16 +198,8 @@ pub fn switch(
         .h(px(22.))
         .rounded_full()
         .border_1()
-        .border_color(if checked {
-            tokens::accent()
-        } else {
-            tokens::control_line()
-        })
-        .bg(if checked {
-            tokens::accent()
-        } else {
-            tokens::control()
-        })
+        .border_color(track_border)
+        .bg(track_bg)
         .cursor(CursorStyle::PointingHand)
         .on_click(move |_, window, cx| on_toggle(!checked, window, cx))
         .child(
@@ -201,7 +214,7 @@ pub fn switch(
                 .shadow(vec![BoxShadow {
                     color: tokens::knob_shadow(),
                     offset: point(px(0.), px(1.)),
-                    blur_radius: px(2.),
+                    blur_radius: tokens::css_blur(2.),
                     spread_radius: px(0.),
                     inset: false,
                 }]),
@@ -215,8 +228,8 @@ struct SliderDrag {
     width: Pixels,
 }
 
-/// `.slider` — styles.css:914-932. 130px track × 4px, 14px white thumb.
-/// Drag emits live value; release emits commit.
+/// `.slider` — styles.css:914-932. 130×4 track; 14px thumb paints over, centered.
+/// Drag keyed by slider id; click jumps; move/release tracked outside (rule 14).
 pub fn slider(
     id: impl Into<ElementId>,
     value: f32,
@@ -227,20 +240,21 @@ pub fn slider(
     window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
-    let id = id.into();
+    let id: ElementId = id.into();
     let range = (max - min).max(f32::EPSILON);
     let t = ((value - min) / range).clamp(0., 1.);
     let track_w = px(130.);
     let thumb = px(14.);
+    let track_h = px(4.);
     let x = (track_w - thumb) * t;
 
-    let drag = window.use_keyed_state("slider-drag", cx, |_, _| SliderDrag::default());
+    let drag = window.use_keyed_state((id.clone(), "drag"), cx, |_, _| SliderDrag::default());
     let on_live = Rc::new(on_live);
     let on_commit = Rc::new(on_commit);
 
+    // Jump like `<input type=range>`: map pointer x across the full track.
     let sample = move |pos_x: Pixels, origin_x: Pixels, width: Pixels| -> f32 {
-        let local = pos_x - origin_x - thumb / 2.;
-        let t = (local / (width - thumb)).clamp(0., 1.);
+        let t = ((pos_x - origin_x) / width).clamp(0., 1.);
         min + t * (max - min)
     };
 
@@ -248,21 +262,20 @@ pub fn slider(
         .id(id)
         .relative()
         .w(track_w)
-        .h(px(14.))
-        .flex()
-        .items_center()
+        .h(track_h)
         .cursor(CursorStyle::PointingHand)
         .child(
             div()
                 .w_full()
-                .h(px(4.))
+                .h_full()
                 .rounded_full()
                 .bg(tokens::surface_3()),
         )
         .child(
             div()
                 .absolute()
-                .top(px(0.))
+                // Center 14px thumb on 4px track: (14-4)/2 = 5 above.
+                .top(px(-5.))
                 .left(x)
                 .w(thumb)
                 .h(thumb)
@@ -271,7 +284,7 @@ pub fn slider(
                 .shadow(vec![BoxShadow {
                     color: tokens::slider_thumb_shadow(),
                     offset: point(px(0.), px(1.)),
-                    blur_radius: px(3.),
+                    blur_radius: tokens::css_blur(3.),
                     spread_radius: px(0.),
                     inset: false,
                 }]),
@@ -280,10 +293,11 @@ pub fn slider(
             let on_live = on_live.clone();
             let drag = drag.clone();
             move |ev, window, cx| {
-                // Approximate origin from position; refined on click bounds via move.
+                // Origin ≈ click minus current normalized offset; refined by width.
+                let origin_x = ev.position.x - track_w * t;
                 drag.update(cx, |d, _| {
                     d.active = true;
-                    d.origin_x = ev.position.x - x - thumb / 2.;
+                    d.origin_x = origin_x;
                     d.width = track_w;
                 });
                 let d = *drag.read(cx);
@@ -297,9 +311,6 @@ pub fn slider(
             let on_live = on_live.clone();
             let drag = drag.clone();
             move |ev, window, cx| {
-                if !ev.dragging() && !drag.read(cx).active {
-                    return;
-                }
                 if !drag.read(cx).active {
                     return;
                 }
@@ -309,6 +320,19 @@ pub fn slider(
             }
         })
         .on_mouse_up(MouseButton::Left, {
+            let on_commit = on_commit.clone();
+            let drag = drag.clone();
+            move |ev, window, cx| {
+                if !drag.read(cx).active {
+                    return;
+                }
+                let d = *drag.read(cx);
+                drag.update(cx, |d, _| d.active = false);
+                let v = sample(ev.position.x, d.origin_x, d.width);
+                on_commit(v, window, cx);
+            }
+        })
+        .on_mouse_up_out(MouseButton::Left, {
             let on_commit = on_commit.clone();
             let drag = drag.clone();
             move |ev, window, cx| {
@@ -379,18 +403,58 @@ pub fn on_value_edit_event(
     }
 }
 
+/// Advance of mono `"0"` at 12px (Cascadia Code / fallbacks).
+fn mono_zero_advance(window: &Window) -> Pixels {
+    let text_system = window.text_system();
+    let font = Font {
+        family: tokens::FONT_MONO.into(),
+        features: FontFeatures::default(),
+        fallbacks: Some(FontFallbacks::from_fonts(
+            tokens::FONT_MONO_FALLBACKS
+                .iter()
+                .map(|f| (*f).to_string())
+                .collect(),
+        )),
+        weight: FontWeight::SEMIBOLD,
+        style: FontStyle::Normal,
+    };
+    let shaped = text_system.shape_line(
+        "0".into(),
+        px(12.),
+        &[TextRun {
+            len: 1,
+            font,
+            color: tokens::ink(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }],
+        None,
+    );
+    shaped.width
+}
+
 /// `.value-edit` — styles.css:934-945. Kit Input with appearance(false).
-pub fn value_edit(input: &Entity<InputState>, wide: bool) -> impl IntoElement {
+pub fn value_edit(
+    input: &Entity<InputState>,
+    wide: bool,
+    window: &Window,
+) -> impl IntoElement {
+    let ch = mono_zero_advance(window);
+    let width = if wide { ch * 4.5 } else { ch * 4.0 };
     div()
-        .w(if wide { px(36.) } else { px(32.) })
+        .w(width)
         .child(
             Input::new(input)
                 .appearance(false)
                 .text_size(px(12.))
                 .font_family(tokens::FONT_MONO)
                 .font_weight(FontWeight::SEMIBOLD)
+                .line_height(relative(1.4))
+                .text_align(TextAlign::Right)
                 .text_color(tokens::ink())
                 .border_b_1()
+                .border_dashed()
                 .border_color(tokens::line_2()),
         )
 }
@@ -446,7 +510,7 @@ pub fn hook_badge(active: bool, label: impl Into<SharedString>) -> impl IntoElem
 }
 
 /// Modal backdrop + card + header. styles.css:799-849.
-/// Fade in 150 ms (skipped when `freeze`). Backdrop click and Escape close.
+/// Fade in 150 ms from 0→1 on open (RULEBOOK rule 12). Backdrop click and Escape close.
 pub fn modal_frame(
     id: impl Into<ElementId>,
     title: impl Into<SharedString>,
@@ -456,10 +520,14 @@ pub fn modal_frame(
     window: &mut Window,
     cx: &mut App,
 ) -> impl IntoElement {
-    let id = id.into();
+    let id: ElementId = id.into();
     let on_close = Rc::new(on_close);
     let policy = tokens::motion(tokens::transition_modal_fade(), freeze);
-    let opacity = transition("modal-fade", 1.0_f32, policy, window, cx);
+    // Presence starts from 0 on mount, then animates to 1.
+    let opacity = Presence::new((id.clone(), "fade"), true)
+        .transition(policy)
+        .sample(window, cx)
+        .progress;
 
     let close = on_close.clone();
     div()
@@ -495,7 +563,7 @@ pub fn modal_frame(
                 .shadow(vec![BoxShadow {
                     color: tokens::modal_shadow(),
                     offset: point(px(0.), px(20.)),
-                    blur_radius: px(60.),
+                    blur_radius: tokens::css_blur(60.),
                     spread_radius: px(0.),
                     inset: false,
                 }])
@@ -585,7 +653,7 @@ pub fn btn_danger_outline(
         .child(label.into())
 }
 
-/// Quiet surface button used by repair / check-updates style controls.
+/// `.btn-repair-hook` — styles.css:1193-1217. Quiet surface control.
 pub fn btn_surface(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -603,6 +671,7 @@ pub fn btn_surface(
         .text_color(tokens::ink())
         .text_size(px(11.5))
         .font_weight(FontWeight::SEMIBOLD)
+        .whitespace_nowrap()
         .when(enabled, |this| {
             this.cursor(CursorStyle::PointingHand)
                 .hover(|s| {
@@ -613,5 +682,62 @@ pub fn btn_surface(
                 .on_click(move |_, window, cx| on_click(window, cx))
         })
         .when(!enabled, |this| this.opacity(0.6).cursor(CursorStyle::Arrow))
+        .child(label.into())
+}
+
+/// `.btn-check-updates` — styles.css:1104-1126.
+pub fn btn_check_updates(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    enabled: bool,
+    on_click: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    h_flex()
+        .id(id)
+        .items_center()
+        .gap(px(5.))
+        .bg(tokens::surface_3())
+        .border_1()
+        .border_color(tokens::line())
+        .text_color(tokens::ink_2())
+        .text_size(px(11.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .px(px(8.))
+        .py(px(3.))
+        .rounded(px(5.))
+        .when(enabled, |this| {
+            this.cursor(CursorStyle::PointingHand)
+                .hover(|s| {
+                    s.bg(tokens::field())
+                        .text_color(tokens::ink())
+                        .border_color(tokens::line_2())
+                })
+                .on_click(move |_, window, cx| on_click(window, cx))
+        })
+        .when(!enabled, |this| this.opacity(0.6).cursor(CursorStyle::Arrow))
+        .child(label.into())
+}
+
+/// `.btn-create-first` — styles.css:490-502.
+pub fn btn_create_first(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    on_click: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    h_flex()
+        .id(id)
+        .items_center()
+        .gap(px(6.))
+        .bg(tokens::surface_3())
+        .border_1()
+        .border_color(tokens::line())
+        .text_color(tokens::ink())
+        .text_size(px(12.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .px(px(14.))
+        .py(px(6.))
+        .rounded(px(6.))
+        .cursor(CursorStyle::PointingHand)
+        .on_click(move |_, window, cx| on_click(window, cx))
         .child(label.into())
 }

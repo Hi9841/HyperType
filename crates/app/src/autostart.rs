@@ -21,6 +21,7 @@ pub fn is_enabled() -> bool {
     found
 }
 
+#[allow(dead_code)] // S5 Settings autostart switch
 pub fn set_enabled(enabled: bool) -> Result<(), String> {
     let key = open(KEY_SET_VALUE)?;
     let result = if enabled {

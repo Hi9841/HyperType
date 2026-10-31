@@ -4,8 +4,10 @@ use gpui_kit::*;
 
 use crate::ui::studio::Studio;
 use crate::ui::titlebar;
+use crate::ui::update;
 
 /// Apply a named parity state. Returns true when a slice handled it.
+#[cfg_attr(not(feature = "parity"), allow(dead_code))] // Wired only under --features parity
 pub fn apply(
     name: &str,
     studio: &Entity<Studio>,
@@ -38,6 +40,10 @@ pub fn apply(
             return true;
         }
         if titlebar::parity_state(studio, name, window, cx) {
+            return true;
+        }
+        // S7b adds `update-available` in update.rs without editing this file.
+        if update::parity_state(studio, name, window, cx) {
             return true;
         }
         // default-selected: Studio::new already selects the first snippet.

@@ -29,6 +29,7 @@ pub struct Studio {
     pub state: Arc<AppState>,
     pub status: Status,
     pub snippets: Vec<SnippetView>,
+    #[allow(dead_code)] // S5 Settings reads/writes this
     pub autostart: bool,
     pub selected: Option<String>,
     pub creating_new: bool,
@@ -64,9 +65,13 @@ impl Studio {
         let tokens = cx.new(|cx| TokensModal::new(weak.clone(), cx));
 
         let _subscriptions = vec![
-            // Tray toggle updates Shell; refresh status.enabled (App.tsx:191-195).
+            // Tray toggle: copy ONLY status.enabled (App.tsx:191-194).
             cx.observe_global::<Shell>(|this, cx| {
-                this.refetch_status(cx);
+                let enabled = cx.global::<Shell>().enabled();
+                if this.status.enabled != enabled {
+                    this.status.enabled = enabled;
+                    cx.notify();
+                }
             }),
         ];
 
@@ -120,12 +125,16 @@ impl Studio {
         cx.notify();
     }
 
-    pub fn refetch_snippets(&mut self, cx: &mut Context<Self>) {
+    #[allow(dead_code)] // S2/S4 call after mutations; also drives initial select
+    pub fn refetch_snippets(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.snippets = commands::snippets(&self.state);
+        // Initial selection once when the first non-empty list arrives (App.tsx:248-257).
+        self.maybe_initial_select(window, cx);
         cx.notify();
     }
 
     /// Optimistic status edit (Settings).
+    #[allow(dead_code)] // S5 Settings patches
     pub fn patch_status(&mut self, f: impl FnOnce(&mut Status), cx: &mut Context<Self>) {
         f(&mut self.status);
         cx.notify();
@@ -147,6 +156,7 @@ impl Studio {
     }
 
     /// App.tsx:236-246
+    #[allow(dead_code)] // S2 new-snippet; also delete fallback
     pub fn start_new_snippet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.creating_new = true;
         self.selected = None;
@@ -156,15 +166,18 @@ impl Studio {
         cx.notify();
     }
 
-    /// App.tsx:454-480 — Editor owns busy and messages.
+    /// App.tsx:454-480 — Editor owns busy and messages. Trigger is trimmed (455).
+    #[allow(dead_code)] // S4 save path
     pub fn save_snippet(
         &mut self,
         old: Option<&str>,
         trigger: &str,
         expansion: String,
         kind: TriggerKind,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
+        let trigger = trigger.trim();
         let shell = cx.global::<Shell>();
         match old {
             None => commands::add_snippet(&shell.state, &shell.hotkeys, trigger, expansion, kind)?,
@@ -179,12 +192,13 @@ impl Studio {
         }
         self.selected = Some(trigger.to_string());
         self.creating_new = false;
-        self.refetch_snippets(cx);
+        self.refetch_snippets(window, cx);
         self.refetch_status(cx);
         Ok(())
     }
 
     /// App.tsx:482-499 — async confirm; OK deletes.
+    #[allow(dead_code)] // S4 delete path
     pub fn delete_snippet(
         &mut self,
         trigger: String,
@@ -215,7 +229,7 @@ impl Studio {
                     });
                     return;
                 }
-                this.refetch_snippets(cx);
+                this.refetch_snippets(window, cx);
                 this.refetch_status(cx);
                 if this.selected.as_deref() == Some(trigger.as_str()) {
                     match this.snippets.first().cloned() {
@@ -230,7 +244,8 @@ impl Studio {
     }
 
     /// App.tsx:501-513 — optimistic reorder.
-    pub fn apply_reorder(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
+    #[allow(dead_code)] // S2 row reorder
+    pub fn apply_reorder(&mut self, from: usize, to: usize, window: &mut Window, cx: &mut Context<Self>) {
         if from == to || from >= self.snippets.len() || to >= self.snippets.len() {
             return;
         }
@@ -239,7 +254,7 @@ impl Studio {
         let order: Vec<String> = self.snippets.iter().map(|s| s.trigger.clone()).collect();
         cx.notify();
         if commands::reorder_snippets(&self.state, order).is_err() {
-            self.refetch_snippets(cx);
+            self.refetch_snippets(window, cx);
         }
     }
 
@@ -250,6 +265,7 @@ impl Studio {
     }
 
     /// App.tsx:381-389
+    #[allow(dead_code)] // S5 Settings autostart
     pub fn set_autostart(&mut self, on: bool, cx: &mut Context<Self>) {
         let previous = self.autostart;
         self.autostart = on;
@@ -267,6 +283,7 @@ impl Studio {
     }
 
     /// App.tsx:437-452
+    #[allow(dead_code)] // S6 token insert
     pub fn insert_token(&mut self, token: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.editor.update(cx, |editor, cx| {
             editor.insert_token(token, window, cx);

@@ -90,6 +90,7 @@ pub fn toggle_enabled(cx: &mut App) -> bool {
     })
 }
 
+#[allow(dead_code)] // Tray / hotkey entry; main calls ui::open_window directly.
 pub fn open_window(cx: &mut App) {
     crate::ui::open_window(cx);
 }

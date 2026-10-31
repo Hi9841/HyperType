@@ -86,6 +86,8 @@ impl AssetSource for Assets {
     }
 }
 
+/// Full 128×128 logo for the window / tray icon.
+#[allow(dead_code)] // Window/tray icon consumers; brand mark uses logo_mark.
 pub fn logo() -> Arc<Image> {
     static LOGO: OnceLock<Arc<Image>> = OnceLock::new();
     LOGO.get_or_init(|| {
@@ -95,4 +97,37 @@ pub fn logo() -> Arc<Image> {
         ))
     })
     .clone()
+}
+
+/// Pre-scaled 18×18 brand mark (1x). Area (BOX) filter from the 128px source.
+pub fn logo_18() -> Arc<Image> {
+    static LOGO: OnceLock<Arc<Image>> = OnceLock::new();
+    LOGO.get_or_init(|| {
+        Arc::new(Image::from_bytes(
+            ImageFormat::Png,
+            include_bytes!("../assets/logo-18.png").to_vec(),
+        ))
+    })
+    .clone()
+}
+
+/// Pre-scaled 36×36 brand mark (2x). Area (BOX) filter from the 128px source.
+pub fn logo_36() -> Arc<Image> {
+    static LOGO: OnceLock<Arc<Image>> = OnceLock::new();
+    LOGO.get_or_init(|| {
+        Arc::new(Image::from_bytes(
+            ImageFormat::Png,
+            include_bytes!("../assets/logo-36.png").to_vec(),
+        ))
+    })
+    .clone()
+}
+
+/// Brand mark at 1:1 device pixels for the window scale factor (RULEBOOK rule 15).
+pub fn logo_mark(scale_factor: f32) -> Arc<Image> {
+    if scale_factor >= 1.5 {
+        logo_36()
+    } else {
+        logo_18()
+    }
 }

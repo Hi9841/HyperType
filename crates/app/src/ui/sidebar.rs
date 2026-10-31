@@ -6,6 +6,7 @@ use crate::ui::studio::Studio;
 use crate::ui::tokens;
 
 pub struct Sidebar {
+    #[allow(dead_code)] // S2 reads Studio through this handle
     studio: WeakEntity<Studio>,
     _observe: Subscription,
 }
@@ -20,6 +21,7 @@ impl Sidebar {
     }
 
     /// S2 adds parity arms here. Signature matches `ui/parity.rs` dispatch.
+    #[allow(dead_code)] // S2 parity arms
     pub fn parity_state(
         &mut self,
         _name: &str,
