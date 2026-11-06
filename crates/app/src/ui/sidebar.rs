@@ -234,7 +234,7 @@ impl Sidebar {
         if index == state.from {
             return px(target);
         }
-        let policy = tokens::motion(tokens::transition_fast(), freeze);
+        let policy = tokens::movement(tokens::transition_fast(), freeze);
         transition(
             (("row-shift", index), "top"),
             px(target),
@@ -779,6 +779,7 @@ impl Sidebar {
                                         Tooltip::new("Clear search").build(window, cx)
                                     })
                                     // Enter/Space: GPUI fires on_click on KeyUp for the focused element.
+                                    .active(tokens::press)
                                     .on_click({
                                         let entity = entity.clone();
                                         move |_, window, cx| {
@@ -825,6 +826,7 @@ impl Sidebar {
                             })
                             .hover(|s| s.bg(tokens::accent_hover()))
                             // Enter/Space: GPUI fires on_click on KeyUp for the focused element.
+                            .active(tokens::press)
                             .on_click({
                                 let entity = entity.clone();
                                 move |_, window, cx| {
@@ -1120,6 +1122,7 @@ fn io_button(
                 })
                 .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
                 // Enter/Space: GPUI fires on_click on KeyUp for the focused element.
+                .active(tokens::press)
                 .on_click({
                     let on_click = on_click.clone();
                     move |_, window, cx| on_click(window, cx)
@@ -1321,6 +1324,7 @@ fn render_row(
         .tooltip(move |window, cx| Tooltip::new("Delete snippet").build(window, cx))
         // Enter/Space: GPUI fires on_click on KeyUp for the focused button; a
         // separate key handler would open the confirm prompt twice.
+        .active(tokens::press)
         .on_click({
             let entity = entity.clone();
             let trigger = trigger.clone();
@@ -1371,6 +1375,7 @@ fn render_row(
         .when(!is_active && !force_hover && !drag_active, |this| {
             this.hover(|s| s.bg(tokens::surface_3()).border_color(tokens::line_2()))
         })
+        .active(tokens::press)
         .on_click({
             let entity = entity.clone();
             let snippet = SnippetView {

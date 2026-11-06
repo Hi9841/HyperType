@@ -1066,6 +1066,7 @@ impl Render for SettingsModal {
                                     s.shadow(tokens::focus_visible_shadows(tokens::accent()))
                                 })
                                 .hover(|s| s.bg(tokens::accent_hover()))
+                                .active(tokens::press)
                                 .on_click({
                                     let studio = studio.clone();
                                     move |_ev, _window, cx| {
@@ -1104,6 +1105,7 @@ impl Render for SettingsModal {
                     .tab_index(0)
                     .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::surface_2())))
                     .hover(|s| s.bg(tokens::danger_tint()))
+                    .active(tokens::press)
                     .on_click(|_ev, _window, cx| {
                         cx.quit();
                     })

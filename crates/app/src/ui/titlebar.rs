@@ -113,6 +113,7 @@ fn brand_icon(
         .cursor(CursorStyle::PointingHand)
         .occlude()
         .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+        .active(tokens::press)
         .on_click(cx.listener(|this, _, _, cx| {
             this.toggle_enabled(cx);
         }))
@@ -270,6 +271,7 @@ fn update_pill(info: UpdateInfo, cx: &mut Context<Studio>) -> impl IntoElement {
         .occlude()
         .hover(|s| s.bg(tokens::accent()).text_color(tokens::white()))
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
+        .active(tokens::press)
         .on_click(cx.listener(|this, _, _, cx| {
             this.set_modal(Some(Modal::Settings), cx);
         }))
@@ -308,6 +310,7 @@ fn settings_btn(cx: &mut Context<Studio>) -> impl IntoElement {
         .tooltip(move |window, cx| {
             Tooltip::new("Settings & Preferences").build(window, cx)
         })
+        .active(tokens::press)
         .on_click(cx.listener(|this, _, _, cx| {
             this.set_modal(Some(Modal::Settings), cx);
         }))
@@ -333,6 +336,7 @@ fn winbtn_minimize() -> impl IntoElement {
         .focus_visible(|s| {
             s.shadow(tokens::focus_visible_shadows(tokens::surface_1()))
         })
+        .active(tokens::press)
         .on_click(|_, window, _| {
             window.minimize_window();
         })
@@ -359,6 +363,7 @@ fn winbtn_close() -> impl IntoElement {
         .focus_visible(|s| {
             s.shadow(tokens::focus_visible_shadows(tokens::surface_1()))
         })
+        .active(tokens::press)
         .on_click(|_, window, _| {
             window.remove_window();
         })

@@ -528,6 +528,7 @@ fn token_pill(
         })
         // Enter/Space (rule 21): GPUI fires on_click on KeyUp for the focused
         // pill; a separate key handler would insert twice.
+        .active(tokens::press)
         .on_click(move |_, window, cx| {
             if let Some(entity) = this.upgrade() {
                 entity.update(cx, |modal, cx| {

@@ -105,7 +105,7 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
         .unwrap_or(0);
     let target_x = thumb_w * selected as f32;
     // Linear time + tokens::spring(t) via transition_spring (rule 18).
-    let policy = tokens::motion(tokens::transition_spring(), freeze);
+    let policy = tokens::movement(tokens::transition_spring(), freeze);
     // Stable channel per control (RULEBOOK rule 12).
     let x = transition((id.clone(), "thumb"), target_x, policy, window, cx);
     let on_change = Rc::new(on_change);
@@ -182,6 +182,7 @@ pub fn segmented<T: Copy + PartialEq + 'static>(
                 })
                 // Enter/Space: GPUI fires `on_click` on KeyUp for focused elements
                 // (pending_keyboard_down). Do not also handle keys here.
+                .active(tokens::press)
                 .on_click(move |_, window, cx| {
                     on_change(value, window, cx);
                 })
@@ -204,7 +205,7 @@ pub fn switch(
     let id: ElementId = id.into();
     let target = if checked { px(16.) } else { px(0.) };
     // Linear time + tokens::spring(t) via transition_spring (rule 18).
-    let knob_policy = tokens::motion(tokens::transition_spring(), freeze);
+    let knob_policy = tokens::movement(tokens::transition_spring(), freeze);
     let track_policy = tokens::motion(tokens::transition_smooth(), freeze);
     let x = transition((id.clone(), "knob"), target, knob_policy, window, cx);
     let track_bg = transition(
@@ -264,6 +265,7 @@ pub fn switch(
         })
         // Enter/Space: GPUI fires `on_click` on KeyUp for focused elements
         // (pending_keyboard_down). Do not also handle keys here.
+        .active(tokens::press)
         .on_click(move |_, window, cx| on_toggle(!checked, window, cx))
         .child(
             div()
@@ -811,6 +813,7 @@ pub fn modal_frame_sized(
                                 })
                                 // Enter/Space: GPUI fires on_click on KeyUp for the
                                 // focused element; no separate key handler.
+                                .active(tokens::press)
                                 .on_click({
                                     let close = close.clone();
                                     move |_, window, cx| close(window, cx)
@@ -876,6 +879,7 @@ pub fn btn_danger_outline(
         .tab_index(0)
         .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::bg())))
         .hover(|s| s.bg(tokens::danger_tint()).border_color(tokens::danger()))
+        .active(tokens::press)
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(label.into())
 }
@@ -913,6 +917,7 @@ pub fn btn_surface(
                         .border_color(tokens::accent())
                         .text_color(tokens::white())
                 })
+                .active(tokens::press)
                 .on_click(move |_, window, cx| on_click(window, cx))
         })
         .when(!enabled, |this| this.opacity(0.6).cursor(CursorStyle::Arrow))
@@ -932,7 +937,7 @@ pub fn btn_check_updates(
     freeze: bool,
     on_click: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let icon = if spinning && !freeze {
+    let icon = if spinning && !freeze && !tokens::reduced_motion() {
         icons::refresh()
             .with_animation(
                 "btn-check-updates-spin",
@@ -969,6 +974,7 @@ pub fn btn_check_updates(
                         .text_color(tokens::ink())
                         .border_color(tokens::line_2())
                 })
+                .active(tokens::press)
                 .on_click(move |_, window, cx| on_click(window, cx))
         })
         .when(!enabled, |this| this.opacity(0.6).cursor(CursorStyle::Arrow))
@@ -1001,6 +1007,7 @@ pub fn btn_create_first(
         .cursor(CursorStyle::PointingHand)
         .tab_index(0)
         .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::surface_3())))
+        .active(tokens::press)
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(icons::plus())
         .child(label.into())

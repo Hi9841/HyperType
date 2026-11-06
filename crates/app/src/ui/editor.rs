@@ -762,6 +762,7 @@ impl Editor {
                     s.shadow(shadows)
                 }
             })
+            .active(tokens::press)
             .on_click(move |_, window, cx| {
                 entity.update(cx, |this, cx| {
                     this.start_shortcut_recording(window, cx);
@@ -770,7 +771,7 @@ impl Editor {
             .child(hint);
 
         // listening pulse: 1.2s ease-in-out infinite; freeze at t=0 uses static ring above.
-        if recording && !freeze {
+        if recording && !freeze && !tokens::reduced_motion() {
             let ease = Easing::EaseInOut;
             btn.with_animation(
                 "recorder-listening",
@@ -1109,6 +1110,7 @@ fn token_btn(
         })
         .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::bg())))
         .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+        .active(tokens::press)
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(label.to_string())
 }
@@ -1144,6 +1146,7 @@ fn token_btn_all(
         })
         .focus_visible(|s| s.shadow(tokens::focus_visible_shadows(tokens::bg())))
         .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
+        .active(tokens::press)
         .on_click(move |_, window, cx| on_click(window, cx))
         .child("All Tokens")
 }
