@@ -145,17 +145,11 @@ pub const MODAL_FADE: Duration = Duration::from_millis(150);
 #[allow(dead_code)] // S4 recorder pulse
 pub const LISTENING: Duration = Duration::from_millis(1200);
 #[allow(dead_code)] // btn_check_updates spin
-pub const SPIN: Duration = Duration::from_secs(1);
+pub const SPIN: Duration = Duration::from_millis(700);
 
 /// Custom token EASE_OUT: cubic-bezier(0.2, 0, 0, 1) — styles.css motion token.
 pub fn ease_out() -> Easing {
     Easing::cubic_bezier(0.2, 0.0, 0.0, 1.0).expect("EASE_OUT")
-}
-
-/// CSS keyword `ease-out` = cubic-bezier(0, 0, 0.58, 1) (RULEBOOK rule 19).
-#[allow(dead_code)] // S5/S6 modal_frame fade
-pub fn css_ease_out() -> Easing {
-    Easing::EaseOut
 }
 
 /// Unclamped cubic-bezier(0.32, 1.25, 0.32, 1). May exceed [0, 1] (rule 18).
@@ -211,10 +205,46 @@ pub fn transition_spring() -> Transition {
     Transition::new(SMOOTH).easing(Easing::Custom(Rc::new(spring)))
 }
 
-/// Modal fadeIn: 150 ms CSS keyword ease-out (rule 19).
+/// Modal fadeIn: 150 ms on the shared ease-out token.
 #[allow(dead_code)] // S5/S6 modal_frame
 pub fn transition_modal_fade() -> Transition {
-    Transition::new(MODAL_FADE).easing(css_ease_out())
+    Transition::new(MODAL_FADE).easing(ease_out())
+}
+
+/// Press feedback for `.active()`. GPUI divs have no transform, so a press is an instant dim.
+/// Sits next to `on_click`, so a disabled control does not react.
+pub fn press(style: StyleRefinement) -> StyleRefinement {
+    style.opacity(0.8)
+}
+
+/// Windows "Animation effects" is off (`prefers-reduced-motion: reduce`).
+#[cfg(windows)]
+pub fn reduced_motion() -> bool {
+    use windows::Win32::Foundation::BOOL;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SPI_GETCLIENTAREAANIMATION, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
+    };
+    let mut enabled = BOOL(1);
+    // SAFETY: `enabled` is a BOOL, the size SPI_GETCLIENTAREAANIMATION writes.
+    let read = unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            Some((&mut enabled as *mut BOOL).cast()),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    read.is_ok() && !enabled.as_bool()
+}
+
+#[cfg(not(windows))]
+pub fn reduced_motion() -> bool {
+    false
+}
+
+/// Policy for a move on the screen: reduced motion drops it, fades keep [`motion`].
+pub fn movement(policy: Transition, freeze: bool) -> Transition {
+    motion(policy, freeze || reduced_motion())
 }
 
 /// Motion policy that finishes at once when parity freezes animations.
