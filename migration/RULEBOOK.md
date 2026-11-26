@@ -449,3 +449,16 @@ S7a runs now. S7b after S5 and S7a merge.
 ## Deviation log
 
 (empty)
+
+
+## Studio alignment (2026-11-26)
+
+Codex set these guides for the Windows Studio.
+
+- The search icon and the row drag grips share a center at 29 px from the
+  sidebar edge. The search text and snippet excerpts start at 45 px.
+- The Snippets heading starts at the leading edge of the grip glyphs.
+  The list total ends on the same line as the row statistics. Both
+  use the same scrollbar gutter when the list overflows.
+- The Preferences footer uses the body insets. Quit HyperType ends at the
+  trailing edge of the controls, inside the scrollbar gutter.

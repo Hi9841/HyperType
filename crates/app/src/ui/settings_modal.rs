@@ -22,6 +22,9 @@ use crate::ui::tokens;
 use crate::ui::update;
 use crate::ui::widgets::{self, on_value_edit_event, SegKind};
 
+const CONTENT_INSET: f32 = 20.;
+const SCROLLBAR_GUTTER: f32 = 15.;
+
 const POLL_MS: u64 = 1500;
 const HOOK_MSG_MS: u64 = 3500;
 
@@ -600,7 +603,7 @@ impl Render for SettingsModal {
             }
         };
 
-        // Body — styles.css:851-857. pr 35 = 20 + 15px classic scrollbar gutter.
+        // Leave space for the scrollbar outside the control column.
         let body_rows = v_flex()
             .id("settings-modal-body")
             .relative()
@@ -609,8 +612,8 @@ impl Render for SettingsModal {
             .w_full()
             .pt(px(12.))
             .pb(px(12.))
-            .pl(px(20.))
-            .pr(px(35.))
+            .pl(px(CONTENT_INSET))
+            .pr(px(CONTENT_INSET + SCROLLBAR_GUTTER))
             .gap(px(14.))
             .overflow_y_scroll()
             .track_scroll(&scroll)
@@ -1003,7 +1006,8 @@ impl Render for SettingsModal {
             .id("settings-modal-footer")
             .flex_none()
             .w_full()
-            .px(px(20.))
+            .pl(px(CONTENT_INSET))
+            .pr(px(CONTENT_INSET + SCROLLBAR_GUTTER))
             .py(px(14.))
             .bg(tokens::surface_2())
             .border_t_1()

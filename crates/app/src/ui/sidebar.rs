@@ -37,6 +37,21 @@ const DRAG_ROW_HEIGHT: f32 = 60.;
 const LIST_PAD_TOP: f32 = 6.;
 const ROW_GAP: f32 = 4.;
 const TRANSFER_CLEAR: Duration = Duration::from_secs(3);
+const TOOLBAR_INSET: f32 = 14.;
+const LIST_INSET: f32 = 10.;
+const LIST_SCROLLBAR_GUTTER: f32 = 15.;
+const ROW_PADDING: f32 = 10.;
+const ROW_BORDER: f32 = 1.;
+const ROW_CONTROL_GAP: f32 = 8.;
+const GRIP_SIZE: f32 = 16.;
+const DELETE_SIZE: f32 = 22.;
+const ICON_CENTER: f32 = LIST_INSET + ROW_BORDER + ROW_PADDING + GRIP_SIZE / 2.;
+const LABEL_INSET: f32 = ICON_CENTER + GRIP_SIZE / 2. + ROW_CONTROL_GAP;
+
+fn list_right_inset(scroll: &ScrollHandle) -> f32 {
+    LIST_INSET + if scroll.max_offset().y > px(0.) { LIST_SCROLLBAR_GUTTER } else { 0. }
+}
+
 const SEARCH_PLACEHOLDER: &str = "Search triggers or content...";
 
 #[derive(Clone, Copy)]
@@ -648,7 +663,7 @@ impl Render for Sidebar {
                 transfer_message,
                 entity.clone(),
             ))
-            .child(self.render_list_header(filtered_count))
+            .child(self.render_list_header(filtered_count, list_right_inset(&scroll)))
             .child(self.render_list(
                 &filtered,
                 &selected,
@@ -679,7 +694,7 @@ impl Sidebar {
         // .sidebar-top-section — styles.css:221-227
         v_flex()
             .id("sidebar-top-section")
-            .p(px(14.))
+            .p(px(TOOLBAR_INSET))
             .gap(px(10.))
             .border_b_1()
             .border_color(tokens::line())
@@ -724,7 +739,7 @@ impl Sidebar {
                                     .bordered(false)
                                     .tab_index(0)
                                     .w_full()
-                                    .pl(px(30.))
+                                    .pl(px(LABEL_INSET - TOOLBAR_INSET - 1.))
                                     .pr(px(28.))
                                     .py(px(0.))
                                     .text_size(px(12.5))
@@ -743,7 +758,7 @@ impl Sidebar {
                         div()
                             .id("search-icon")
                             .absolute()
-                            .left(px(10.))
+                            .left(px(ICON_CENTER - TOOLBAR_INSET - 7.))
                             .top(px(0.))
                             .h(px(32.))
                             .flex()
@@ -903,17 +918,16 @@ impl Sidebar {
             })
     }
 
-    fn render_list_header(&self, filtered_count: usize) -> impl IntoElement {
+    fn render_list_header(&self, filtered_count: usize, list_right_inset: f32) -> impl IntoElement {
         // .sidebar-list-header — styles.css:337-342
-        // Padding 10px 14px 4px around one 11px/1.5 line: box 30.5, text line
-        // at +10 (reference title line y=151 for the header at 141).
         h_flex()
             .id("sidebar-list-header")
             // 30.5 in the reference; 31 keeps the list on Chromium's rounded grid
             // (list top 172, first row 178).
             .h(px(31.))
             .pt(px(10.))
-            .px(px(14.))
+            .pl(px(ICON_CENTER - 2.))
+            .pr(px(list_right_inset + ROW_BORDER + ROW_PADDING + DELETE_SIZE + ROW_CONTROL_GAP))
             .justify_between()
             .items_start()
             .child(
@@ -961,15 +975,16 @@ impl Sidebar {
         // Chromium's classic scrollbar takes 15px of layout width while the
         // list overflows (rule 25); the Kit scrollbar is an overlay, so reserve
         // that gutter on the right. max_offset is from the previous layout.
-        let overflows = scroll.max_offset().y > px(0.);
+        let pad_right = list_right_inset(&scroll);
+        let overflows = pad_right > LIST_INSET;
         let list = v_flex()
             .id("studio-snippets-list")
             .relative()
             .flex_1()
             .min_h_0()
             .pt(px(6.))
-            .pl(px(10.))
-            .pr(px(if overflows { 25. } else { 10. }))
+            .pl(px(LIST_INSET))
+            .pr(px(pad_right))
             .pb(px(14.))
             .gap(px(4.))
             .overflow_y_scroll()
@@ -985,7 +1000,6 @@ impl Sidebar {
             .map(|i| self.row_shift(i, freeze, window, cx))
             .collect();
         let drag_active = drag.is_some();
-        let pad_right = if overflows { 25. } else { 10. };
         let mut rows = Vec::with_capacity(filtered.len());
         // The dragged row has z-index 10 in the spec (App.tsx:573). GPUI paints
         // in tree order, so it leaves a same-size placeholder in its slot and
@@ -1018,7 +1032,7 @@ impl Sidebar {
                     v_flex()
                         .absolute()
                         .top(px(slot_top))
-                        .left(px(10.))
+                        .left(px(LIST_INSET))
                         .right(px(pad_right))
                         .child(row),
                 );
@@ -1191,7 +1205,8 @@ fn render_row(
     };
     let grip = div()
         .id(grip_id)
-        .p(px(2.))
+        .size(px(GRIP_SIZE))
+        .flex_none()
         .flex()
         .items_center()
         .justify_center()
@@ -1301,8 +1316,7 @@ fn render_row(
     // .item-delete-btn — styles.css:453-471
     let delete = div()
         .id(delete_id)
-        .w(px(22.))
-        .h(px(22.))
+        .size(px(DELETE_SIZE))
         .rounded(px(4.))
         .flex()
         .items_center()
@@ -1349,11 +1363,11 @@ fn render_row(
         .top(shift)
         .when(is_dragging, |this| this.occlude())
         .items_center()
-        .gap(px(8.))
+        .gap(px(ROW_CONTROL_GAP))
         // Never shrink in the scroll list (rule 23b).
         .flex_shrink_0()
         .h(px(row_height(index)))
-        .px(px(10.))
+        .px(px(ROW_PADDING))
         .py(px(8.))
         .bg(if is_active {
             tokens::active_row_bg()
